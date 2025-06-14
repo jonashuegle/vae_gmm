@@ -1,0 +1,7 @@
+#ignoring file 
+cluster_mapping.json
+pca_km.pkl
+
+#ignoring directory
+logs/
+__pycache__/
