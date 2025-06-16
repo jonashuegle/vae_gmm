@@ -195,7 +195,7 @@ if __name__ == '__main__':
 
 
 
-    path = '/work/aa0238/a271125/logs_ray/full_multi_vade'
+    path = '/work/aa0238/a271125/logs_ray/vae_gmm_multi_objective_scan/version_2'
     os.environ["RAY_RESULTS_DIR"] = path
 
     result = tune.run(
@@ -204,23 +204,21 @@ if __name__ == '__main__':
             metric=["loss_recon", "silhouette", "calinski_harabasz", "davies_bouldin", "cluster_entropy"],
             mode=["min", "max", "max", "min", "max"],
             points_to_evaluate=[{
-                "clustering_lr":  1.636e-06,
-                "gmm_end_value": 0.004994051,
-                "reg_end_value": 0.406521438,
-                "cat_end_value": 0.002111091,
-                "temp_end_value": 0.000142836,
-                "vae_epochs": 20,
-                "gmm_epochs": 100,
+                "clustering_lr":  5.928647e-06,
+                "gmm_end_value": 5.220209e-03,
+                "reg_end_value": 3.850721e-01,
+                "cat_end_value": 5.362321e-03,
+                "vae_epochs": 25,
+                "gmm_epochs": 80,
                 "cat_epochs": 250,
-                "reg_epochs": 300,
-                "temp_epochs": 250,
-                "warmup_epochs": 30,
-                "kmeans_init_epoch": 10,
+                "reg_epochs": 250,
+                "warmup_epochs": 25,
+                "kmeans_init_epoch": 25,
                 "clustering_warmup": 25,
-                "linear_epochs": 70,
-                "cosine_eta_min": 2.6e-08,
-                "vae_lr_factor": 0.796837555,
-                "vae_lr_patience": 20,
+                "linear_epochs": 25,
+                "cosine_eta_min":  1.2e-08,
+                "vae_lr_factor":  0.777187766,
+                "vae_lr_patience": 30,
             }],
         ),
         num_samples=96,
@@ -267,10 +265,10 @@ if __name__ == '__main__':
             }
         })
 
-    best_model_dir = os.path.join('/work/aa0238/a271125/logs_ray/full_multi_vade/version_1/best_results', 'pareto_optimal_results')
+    best_model_dir = os.path.join('/work/aa0238/a271125/logs_ray/full_multi_vade/version_2/best_results', 'pareto_optimal_results')
     os.makedirs(best_model_dir, exist_ok=True)
 
-    with open(os.path.join('/work/aa0238/a271125/logs_ray/full_multi_vade/version_1/best_results', 'pareto_results.json'), "w") as f:
+    with open(os.path.join('/work/aa0238/a271125/logs_ray/full_multi_vade/version_2/best_results', 'pareto_results.json'), "w") as f:
         json.dump(best_results, f, indent=4)
 
     ray.shutdown()
