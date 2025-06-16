@@ -7,20 +7,42 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gpus=1
-#SBATCH --time=04:00:00
-#SBATCH --array=1-10
+#SBATCH --requeue
+#SBATCH --signal=USR1@600   
+#SBATCH --time=08:00:00
 
+### Parameter-Definition ###
+# 10 verschiedene GMM-Weights
 GMM_VAL=(0.001 0.002 0.003 0.004 0.005220209 0.007 0.008 0.009 0.01 0.015)
+# 5 verschiedene Seeds
+SEEDS=(42 100 123) #2025 31415
 
-# Wähle basierend auf SLURM_ARRAY_TASK_ID den passenden Wert
-GMM=${GMM_VAL[$SLURM_ARRAY_TASK_ID]}
+num_gmm=${#GMM_VAL[@]}      # = 10
+num_seeds=${#SEEDS[@]}      # = 3
+total=$(( num_gmm * num_seeds ))  # = 30
 
+#SBATCH --array=1-${total}
+
+### Index-Berechnung ###
+# SLURM_ARRAY_TASK_ID läuft von 1 bis total
+idx=$(( SLURM_ARRAY_TASK_ID - 1 ))          # Null-basiert: 0…49
+gmm_idx=$(( idx / num_seeds ))              # Ganzzahliger Quotient → 0…9
+seed_idx=$(( idx % num_seeds ))             # Rest → 0…4
+
+# Parameter für diesen Job
+GMM=${GMM_VAL[gmm_idx]}
+SEED=${SEEDS[seed_idx]}
+# Eindeutige Version (z.B. g3_s1)
+VERSION="g${gmm_idx}_s${seed_idx}"
+
+### Environment aktivieren ###
 eval "$(conda shell.bash hook)"
 conda activate MA
 
-echo "#### Starting run $SLURM_ARRAY_TASK_ID####"
+echo "#### Starting run SLURM_ARRAY_TASK_ID=${SLURM_ARRAY_TASK_ID} (GMM=${GMM}, SEED=${SEED}, VERSION=${VERSION}) ####"
 
+### Training aufrufen ###
 python3 training.py \
-    --version $SLURM_ARRAY_TASK_ID \
-    --gmm_end_value $GMM \
-    "$@"
+    --version "${VERSION}" \
+    --gmm_end_value "${GMM}" \
+    --seed "${SEED}"

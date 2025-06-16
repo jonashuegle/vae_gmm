@@ -141,7 +141,7 @@ if __name__ == '__main__':
     data_config = DataConfig(
         data_dir='/home/a/a271125/work/data/slp.N_djfm_6h_aac_detrend_1deg_north_atlantic.nc',
         log_dir='/work/aa0238/a271125/logs/StableVAE',
-        experiment='Exp_gmm_par_scan_1',
+        experiment='Exp_gmm_par_scan_full',
         num_workers=64,
         )
     hardware_config = HardwareConfig(devices=(0,))
