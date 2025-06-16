@@ -79,6 +79,7 @@ if __name__ == '__main__':
     parser.add_argument('--resume', type=bool, default=False, help='Flag to resume training from a checkpoint.') # --resume True
     parser.add_argument('--version', type=int, default=None, help='Version of the experiment for logging.') # --version 0
     parser.add_argument('--max_epochs', type=int, default=400, help='Maximum number of epochs for training.') # --max_epochs 100
+    parser.add_argument('--gmm_end_value', type=float, default=0.005220209, help='End value for GMM training.') # --gmm_end_value 0.005220209
     parser.add_argument('--seed', type=int, default=None, help='Random seed for reproducibility.')
     args = parser.parse_args()
 
@@ -103,7 +104,7 @@ if __name__ == '__main__':
         clustering_lr= 5.929e-06,
         batch_size=400,
         vae_end_value=0.001,
-        gmm_end_value= 0.005220209,
+        gmm_end_value= args.gmm_end_value,#0.005220209,
         reg_end_value=0.385072058,
         cat_end_value=0.005362321,
         log_scaled=True,
@@ -140,7 +141,7 @@ if __name__ == '__main__':
     data_config = DataConfig(
         data_dir='/home/a/a271125/work/data/slp.N_djfm_6h_aac_detrend_1deg_north_atlantic.nc',
         log_dir='/work/aa0238/a271125/logs/StableVAE',
-        experiment='Exp_0',
+        experiment='Exp_gmm_par_scan_1',
         num_workers=64,
         )
     hardware_config = HardwareConfig(devices=(0,))
