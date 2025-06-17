@@ -34,17 +34,17 @@ class TrainingConfig:
 @dataclass
 class TrainingSetup:
     warmup_epochs: int = 25
-    vae_epochs: int = 35
+    vae_epochs: int = 25
     adapt_epochs: int = 15
     gmm_epochs: int = 80
     cat_epochs: int = 250
     reg_epochs: int = 250
-    kmeans_init_epoch : int = 10
+    kmeans_init_epoch : int = 25
     annealing_type: str = 'linear'
     vae_lr_factor: float = 0.777187766
     vae_lr_patience: int = 30
     clustering_warmup: int = 25
-    linear_epochs: int = 60
+    linear_epochs: int = 25
     cosine_T_max: int = 400
     cosine_eta_min: float = 1.2e-8
 

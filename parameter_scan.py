@@ -17,8 +17,8 @@ import json
 import random
 
 from dataset import DataModule
-from config_vade import ModelConfig, TrainingConfig, TrainingSetup, DataConfig, HardwareConfig
-from VaDE_kmeans_init import VaDE
+from config import ModelConfig, TrainingConfig, TrainingSetup, DataConfig, HardwareConfig
+from VAE_GMM import VAE
 from pytorch_lightning.loggers import TensorBoardLogger
 
 torch.set_float32_matmul_precision('medium')
@@ -58,7 +58,7 @@ def is_pareto_efficient(costs):
     return is_efficient
 
 
-def train_vade(config, num_epochs=None, pretrained_path=None):
+def train_vae(config, num_epochs=None, pretrained_path=None):
     try:
         model_config = ModelConfig()
         training_config = TrainingConfig(
@@ -69,13 +69,6 @@ def train_vade(config, num_epochs=None, pretrained_path=None):
         )
         training_setup = TrainingSetup(
             gmm_epochs=config["gmm_epochs"],
-            cat_epochs=config["cat_epochs"],
-            reg_epochs=config["reg_epochs"],
-            vae_epochs=config["vae_epochs"],
-            warmup_epochs=config["warmup_epochs"],
-            kmeans_init_epoch=config["kmeans_init_epoch"],
-            clustering_warmup=config["clustering_warmup"],
-            linear_epochs=config["linear_epochs"],
             cosine_eta_min=config["cosine_eta_min"],
             vae_lr_factor=config["vae_lr_factor"],
             vae_lr_patience=config["vae_lr_patience"],
@@ -86,9 +79,9 @@ def train_vade(config, num_epochs=None, pretrained_path=None):
         # Epochen festlegen
         num_epochs = training_setup.warmup_epochs + training_setup.vae_epochs + training_setup.adapt_epochs+50
         
-        data_module = DataModule(data_config.data_dir, batch_size=training_config.batch_size, num_workers=64)
+        data_module = DataModule(data_config.data_dir, batch_size=training_config.batch_size, num_workers=8)
 
-        model = VaDE(model_config=model_config, training_config=training_config, training_setup=training_setup)
+        model = VAE(model_config=model_config, training_config=training_config, training_setup=training_setup)
 
         # Vortrainiertes Modell laden, falls Pfad angegeben
         if pretrained_path is not None and os.path.exists(pretrained_path):
@@ -96,9 +89,9 @@ def train_vade(config, num_epochs=None, pretrained_path=None):
             model.load_state_dict(checkpoint["state_dict"], strict=False)
             print(f"Loaded pretrained weights from {pretrained_path}")
 
-        logger = TensorBoardLogger(save_dir='/work/aa0238/a271125/logs_ray/full_multi_vade',
+        logger = TensorBoardLogger(save_dir='/work/aa0238/a271125/logs_ray/vae_gmm',
                                    name="multi_objective_scan", 
-                                   version=0)
+                                   version=1)
 
         trainer = pl.Trainer(
             max_epochs=num_epochs,
@@ -136,8 +129,26 @@ if __name__ == '__main__':
 
 
 
-    ray.init(num_gpus=4, num_cpus=256)
+    cpus = int(os.environ.get("SLURM_CPUS_PER_TASK", 1))
+    gpus = int(os.environ.get("SLURM_GPUS_PER_NODE", 0))
 
+    ray.init(
+        num_cpus=cpus,
+        num_gpus=gpus,
+
+        _memory=32 * 1024 * 1024 * 1024,  # 32GB RAM-Limit
+        _redis_max_memory=1 * 1024 * 1024 * 1024,  # 1GB für Redis
+        object_store_memory=4 * 1024 * 1024 * 1024,  # 8GB statt 4GB
+        
+        # Process Management
+        # temp_dir="/work/aa0238/a271125/ray_tmp",  # Entfernt - nicht unterstützt
+        local_mode=False,  # Wichtig: explizit auf False für echte Parallelisierung
+        
+        # Debugging und Fehlerbehandlung
+        log_to_driver=True,  # Aktiviere Logging (wichtig für Fehlerdiagnose)
+        ignore_reinit_error=True,
+        include_dashboard=False,
+    )
     scheduler = ASHAScheduler(
         max_t=200,
         grace_period=120,
@@ -152,14 +163,7 @@ if __name__ == '__main__':
             "gmm_end_value",
             "reg_end_value",
             "cat_end_value",
-            "vae_epochs",
             "gmm_epochs",
-            "cat_epochs",
-            "reg_epochs",
-            "warmup_epochs",
-            "kmeans_init_epoch",
-            "clustering_warmup",
-            "linear_epochs",
             "cosine_eta_min",
             "vae_lr_factor",
             "vae_lr_patience",
@@ -179,17 +183,10 @@ if __name__ == '__main__':
         "gmm_end_value": tune.uniform(0.0045, 0.0055),          # Rund 0.005
         "reg_end_value": tune.uniform(0.35, 0.45),              # Zwischen 0.33 und 0.38
         "cat_end_value": tune.uniform(0.0020, 0.1),          # Sehr schmaler Bereich
-        "vae_epochs": tune.choice([15, 20, 25, 30, 35]),
-        "gmm_epochs": tune.choice([80, 100, 120, 150, 200]),
-        "cat_epochs": tune.choice([200, 220, 240, 250, 260, 270]),
-        "reg_epochs": tune.choice([250, 280, 300, 310]),
-        "warmup_epochs": tune.choice([20, 25, 30, 35, 40]),
-        "kmeans_init_epoch": tune.choice([10, 15]),
-        "clustering_warmup": tune.choice([15, 20, 25, 30, 35]),
-        "linear_epochs": tune.choice([50, 60, 70, 80, 90]),
+        "gmm_epochs": tune.choice([60, 80, 100, 120]),
         "cosine_eta_min": tune.loguniform(1e-8, 3e-8),
         "vae_lr_factor": tune.uniform(0.75, 0.85),
-        "vae_lr_patience": tune.choice([15, 18, 20, 22, 25, 30]),
+        "vae_lr_patience": tune.choice([20,25,30]),
 }
 
 
@@ -199,7 +196,7 @@ if __name__ == '__main__':
     os.environ["RAY_RESULTS_DIR"] = path
 
     result = tune.run(
-        train_vade,
+        train_vae,
         search_alg=OptunaSearch(
             metric=["loss_recon", "silhouette", "calinski_harabasz", "davies_bouldin", "cluster_entropy"],
             mode=["min", "max", "max", "min", "max"],
@@ -208,24 +205,17 @@ if __name__ == '__main__':
                 "gmm_end_value": 5.220209e-03,
                 "reg_end_value": 3.850721e-01,
                 "cat_end_value": 5.362321e-03,
-                "vae_epochs": 25,
                 "gmm_epochs": 80,
-                "cat_epochs": 250,
-                "reg_epochs": 250,
-                "warmup_epochs": 25,
-                "kmeans_init_epoch": 25,
-                "clustering_warmup": 25,
-                "linear_epochs": 25,
                 "cosine_eta_min":  1.2e-08,
                 "vae_lr_factor":  0.777187766,
                 "vae_lr_patience": 30,
             }],
         ),
-        num_samples=96,
-        resources_per_trial={"gpu": 0.25},
+        num_samples=64,
+        resources_per_trial={"gpu": 1},
         scheduler=scheduler,
         progress_reporter=reporter,
-        name="tune_vade_multi_objective",
+        name="vae_gmm",
         local_dir=path,
         config= search_space,
         #resume=True,
@@ -265,10 +255,10 @@ if __name__ == '__main__':
             }
         })
 
-    best_model_dir = os.path.join('/work/aa0238/a271125/logs_ray/full_multi_vade/version_2/best_results', 'pareto_optimal_results')
+    best_model_dir = os.path.join('/work/aa0238/a271125/logs_ray/vae_gmm/version_1/best_results', 'pareto_optimal_results')
     os.makedirs(best_model_dir, exist_ok=True)
 
-    with open(os.path.join('/work/aa0238/a271125/logs_ray/full_multi_vade/version_2/best_results', 'pareto_results.json'), "w") as f:
+    with open(os.path.join('/work/aa0238/a271125/logs_ray/vae_gmm/version_2/best_results', 'pareto_results.json'), "w") as f:
         json.dump(best_results, f, indent=4)
 
     ray.shutdown()
