@@ -66,6 +66,7 @@ def train_vae(config, num_epochs=None, pretrained_path=None):
             gmm_end_value=config["gmm_end_value"],
             reg_end_value=config["reg_end_value"],
             cat_end_value=config["cat_end_value"],
+            seed=42
         )
         training_setup = TrainingSetup(
             gmm_epochs=config["gmm_epochs"],
@@ -91,7 +92,7 @@ def train_vae(config, num_epochs=None, pretrained_path=None):
 
         logger = TensorBoardLogger(save_dir='/work/aa0238/a271125/logs_ray/vae_gmm',
                                    name="multi_objective_scan", 
-                                   version=1)
+                                   version=3)
 
         trainer = pl.Trainer(
             max_epochs=num_epochs,
@@ -192,7 +193,7 @@ if __name__ == '__main__':
 
 
 
-    path = '/work/aa0238/a271125/logs_ray/vae_gmm_multi_objective_scan/version_2'
+    path = '/work/aa0238/a271125/logs_ray/vae_gmm_multi_objective_scan/version_3'
     os.environ["RAY_RESULTS_DIR"] = path
 
     result = tune.run(
@@ -211,14 +212,14 @@ if __name__ == '__main__':
                 "vae_lr_patience": 30,
             }],
         ),
-        num_samples=64,
+        num_samples=54,
         resources_per_trial={"gpu": 1},
         scheduler=scheduler,
         progress_reporter=reporter,
         name="vae_gmm",
         local_dir=path,
         config= search_space,
-        #resume=True,
+        resume="AUTO",
     )
 
     # Kostenmatrix erstellen
@@ -255,10 +256,10 @@ if __name__ == '__main__':
             }
         })
 
-    best_model_dir = os.path.join('/work/aa0238/a271125/logs_ray/vae_gmm/version_1/best_results', 'pareto_optimal_results')
+    best_model_dir = os.path.join('/work/aa0238/a271125/logs_ray/vae_gmm/version_3/best_results', 'pareto_optimal_results')
     os.makedirs(best_model_dir, exist_ok=True)
 
-    with open(os.path.join('/work/aa0238/a271125/logs_ray/vae_gmm/version_2/best_results', 'pareto_results.json'), "w") as f:
+    with open(os.path.join('/work/aa0238/a271125/logs_ray/vae_gmm/version_3/best_results', 'pareto_results.json'), "w") as f:
         json.dump(best_results, f, indent=4)
 
     ray.shutdown()
