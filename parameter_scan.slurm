@@ -30,8 +30,8 @@ export CUDA_VISIBLE_DEVICES=$(seq -s, 0 $((SLURM_GPUS_PER_NODE-1)))
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 # 6) Logs-Verzeichnis (für Ray-Resultate) erstellen
-mkdir -p /work/aa0238/a271125/logs_ray/vae_gmm_multi_objective_scan/version_3
-mkdir -p /work/aa0238/a271125/logs_ray/vae_gmm/version_3/best_results
+mkdir -p /work/aa0238/a271125/logs_ray/vae_gmm_multi_objective_scan/version_4
+mkdir -p /work/aa0238/a271125/logs_ray/vae_gmm/version_4/best_results
 
 echo "Job ID: $SLURM_JOB_ID"
 echo "CPUs: $SLURM_CPUS_PER_TASK, GPUs: $SLURM_GPUS_PER_NODE"

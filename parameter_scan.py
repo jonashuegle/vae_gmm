@@ -11,10 +11,13 @@ from ray.tune.tune_config import TuneConfig
 from ray.tune.integration.pytorch_lightning import TuneReportCallback
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.search.optuna import OptunaSearch
+from ray.tune import Stopper
+
 
 import os
 import json
 import random
+import time
 
 from dataset import DataModule
 from config import ModelConfig, TrainingConfig, TrainingSetup, DataConfig, HardwareConfig
@@ -22,6 +25,63 @@ from VAE_GMM import VAE
 from pytorch_lightning.loggers import TensorBoardLogger
 
 torch.set_float32_matmul_precision('medium')
+
+
+class IdleTrialStopper(Stopper):
+    """Stoppe Trials, die länger als max_idle_s keine Fortschritts-Metrik reporten."""
+    def __init__(self, max_idle_s: float):
+        self.max_idle_s = max_idle_s
+        # Pro Trial speichern wir den Zeitpunkt der letzten echten Report-Metrik
+        self._last_report = {}  # trial_id -> (last_iter, timestamp)
+
+    def __call__(self, trial_id: str, result: dict) -> bool:
+        now = time.time()
+        it = result.get("training_iteration", None)
+        if trial_id not in self._last_report:
+            # Erster Report: initialisieren
+            self._last_report[trial_id] = (it, now)
+            return False
+        last_it, last_t = self._last_report[trial_id]
+        if it is not None and it > last_it:
+            # Iteration hat sich erhöht: updaten
+            self._last_report[trial_id] = (it, now)
+            return False
+        # Keine neue Iteration: prüfen, ob Idle-Zeit überschritten
+        if now - last_t > self.max_idle_s:
+            print(f"⏱️ Trial {trial_id} idle for {now-last_t:.1f}s > {self.max_idle_s}s → stopping")
+            return True
+        return False
+
+    def stop_all(self) -> bool:
+        return False
+class CombinedStopper(Stopper):
+    def __init__(self, max_iter, max_total_s, max_idle_s):
+        self.max_iter     = max_iter
+        self.max_total_s  = max_total_s
+        self.idle_stopper = IdleTrialStopper(max_idle_s)
+        self.start_times  = {}  # für time_total_s
+
+    def __call__(self, trial_id, result):
+        now = time.time()
+        # initialisiere Startzeit
+        if trial_id not in self.start_times:
+            self.start_times[trial_id] = now
+
+        # 1) Gesamtlaufzeit überschritten?
+        if now - self.start_times[trial_id] >= self.max_total_s:
+            return True
+
+        # 2) Max-Iterationen erreicht?
+        if result.get("training_iteration", 0) >= self.max_iter:
+            return True
+
+        # 3) Idle-Timeout erreicht?
+        return self.idle_stopper(trial_id, result)
+
+    def stop_all(self):
+        return False
+
+
 
 class EvaluationCallback(TuneReportCallback):
     def on_validation_end(self, trainer, pl_module):
@@ -177,7 +237,14 @@ if __name__ == '__main__':
             "cluster_entropy",
             "training_iteration",
         ]
+     )
+
+    stopper = CombinedStopper(
+        max_iter=200,           # z.B. Ende bei 200 Epochen
+        max_total_s=7*3600,     # z.B. 7 Stunden
+        max_idle_s=600          # z.B. 10 Minuten
     )
+
 
     search_space = {
         "clustering_lr": tune.uniform(1e-06, 1e-05),          # Niedriger Bereich, um den Effekt niedriger LR zu untersuchen
@@ -193,7 +260,7 @@ if __name__ == '__main__':
 
 
 
-    path = '/work/aa0238/a271125/logs_ray/vae_gmm_multi_objective_scan/version_3'
+    path = '/work/aa0238/a271125/logs_ray/vae_gmm_multi_objective_scan/version_4'
     os.environ["RAY_RESULTS_DIR"] = path
 
     result = tune.run(
@@ -220,6 +287,9 @@ if __name__ == '__main__':
         local_dir=path,
         config= search_space,
         resume="AUTO",
+        stop=stopper,
+        raise_on_failed_trial=False,
+        max_failures=1,
     )
 
     # Kostenmatrix erstellen
@@ -256,10 +326,10 @@ if __name__ == '__main__':
             }
         })
 
-    best_model_dir = os.path.join('/work/aa0238/a271125/logs_ray/vae_gmm/version_3/best_results', 'pareto_optimal_results')
+    best_model_dir = os.path.join('/work/aa0238/a271125/logs_ray/vae_gmm/version_4/best_results', 'pareto_optimal_results')
     os.makedirs(best_model_dir, exist_ok=True)
 
-    with open(os.path.join('/work/aa0238/a271125/logs_ray/vae_gmm/version_3/best_results', 'pareto_results.json'), "w") as f:
+    with open(os.path.join('/work/aa0238/a271125/logs_ray/vae_gmm/version_4/best_results', 'pareto_results.json'), "w") as f:
         json.dump(best_results, f, indent=4)
 
     ray.shutdown()
