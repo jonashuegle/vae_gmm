@@ -8,7 +8,7 @@
 #SBATCH --ntasks=1
 #SBATCH --gpus=1
 #SBATCH --time=04:00:00
-#SBATCH --array=1-10
+#SBATCH --array=1-5
 
 
 eval "$(conda shell.bash hook)"
