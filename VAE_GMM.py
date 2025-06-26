@@ -750,6 +750,8 @@ class VAE(pl.LightningModule):
 
 
     def log_tsne(self, mu):
+        if not self.training_config.log_img:
+            return
         # t-SNE Transformation
         mu = mu.to(self.device)
         tsne = TSNE(n_components=2, random_state=42, perplexity=30, max_iter=300)
@@ -791,7 +793,12 @@ class VAE(pl.LightningModule):
 
         # Legende und Logging
         plt.legend()
-        self.logger.experiment.add_figure(f't-SNE_epoch_{self.current_epoch}', plt.gcf(), close=True)
+        # Hier fehlt die Prüfung:
+        if hasattr(self, "logger") and self.logger is not None and hasattr(self.logger, "experiment"):
+            self.logger.experiment.add_figure(f't-SNE_epoch_{self.current_epoch}', plt.gcf(), close=True)
+        else:
+            print(f"t-SNE für Epoche {self.current_epoch} wird nicht geloggt (kein Logger verfügbar)")
+            
         plt.close()
 
 

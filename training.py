@@ -105,7 +105,7 @@ if __name__ == '__main__':
         batch_size=400,
         vae_end_value=0.001,
         gmm_end_value= args.gmm_end_value,#0.005220209,
-        reg_end_value=0.04072058,
+        reg_end_value=0.385072058,#0.04072058,
         cat_end_value=0.005362321,
         log_scaled=True,
         seed = seed,
@@ -141,7 +141,7 @@ if __name__ == '__main__':
     data_config = DataConfig(
         data_dir='/home/a/a271125/work/data/slp.N_djfm_6h_aac_detrend_1deg_north_atlantic.nc',
         log_dir='/work/aa0238/a271125/logs/StableVAE',
-        experiment='',
+        experiment='Exp_400Epochs',
         num_workers=64,
         )
     hardware_config = HardwareConfig(devices=(0,))

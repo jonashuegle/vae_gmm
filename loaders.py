@@ -48,7 +48,7 @@ class ClusteringLoader:
 
         # 1) Basis-Dataset + Zeit-Index
         self.dataset = CustomDataset(nc_file_path=nc_path)
-        self.times = pd.DatetimeIndex(self.dataset.data.time)
+        self.times = pd.DatetimeIndex(self.dataset.all_times)
 
         # 2) VAE-Modell laden
         base = os.path.join(log_dir, experiment, f"version_{version}")

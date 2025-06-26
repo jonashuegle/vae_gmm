@@ -7,8 +7,8 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gpus=1
-#SBATCH --time=04:00:00
-#SBATCH --array=1-5
+#SBATCH --time=08:00:00
+#SBATCH --array=11-30
 
 
 eval "$(conda shell.bash hook)"
