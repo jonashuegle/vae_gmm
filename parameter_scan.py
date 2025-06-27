@@ -233,6 +233,7 @@ if __name__ == "__main__":
 
     points_to_evaluate = [
         {
+            "latent_dim": 14, 
             "vae_lr": 0.000193066,
             "clustering_lr": 5.929e-06,
             "recon_weight": 0.1,
@@ -252,7 +253,7 @@ if __name__ == "__main__":
     
     # Scheduler
     scheduler = ASHAScheduler(
-        max_t=num_epochs,
+        max_t=300,
         grace_period=120,
         reduction_factor=2,
         metric="silhouette",

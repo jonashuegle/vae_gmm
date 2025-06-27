@@ -89,7 +89,7 @@ def plot_training_diagnostics(
     max_x = 0.0
 
     # --- PANEL 1: Validation Losses (log y) ---
-    #ax_loss.set_yscale("log") 
+    ax_loss.set_yscale("log") 
     for idx, tag in enumerate(loss_tags):
         for exp, vers in experiments.items():
             for i, v in enumerate(vers):
@@ -149,7 +149,7 @@ def plot_training_diagnostics(
                 )
 
     ax_ann.set_ylabel("Annealing Weight (log)")
-    ax_ann.legend(loc="upper left", fontsize="small")
+    ax_ann.legend(loc="lower right", fontsize="small")
     for _, (s_ep, e_ep) in phase_bounds_ep.items():
         ax_ann.axvline(e_ep, color='gray', linestyle='--', alpha=0.7)
 
@@ -189,7 +189,7 @@ def plot_training_diagnostics(
 
     # --- Gemeinsame Legende für Loss-Tags ---
     handles, labels = ax_loss.get_legend_handles_labels()
-    ax_loss.legend(handles, labels, ncol=2, fontsize="small")
+    ax_loss.legend(handles, labels, ncol=2, fontsize="small", loc ="lower right")
 
     plt.tight_layout()
     return fig

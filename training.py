@@ -99,49 +99,93 @@ if __name__ == '__main__':
         num_clusters=5,
         )
 
-    training_config = TrainingConfig(
-        vae_lr=0.000193066,
-        clustering_lr= 5.929e-06,
-        batch_size=400,
-        vae_end_value=0.001,
-        gmm_end_value= args.gmm_end_value,#0.005220209,
-        reg_end_value=0.385072058,#0.04072058,
-        cat_end_value=0.005362321,
-        log_scaled=True,
-        seed = seed,
-        )
+    # training_config = TrainingConfig(
+    #     vae_lr=0.000193066,
+    #     clustering_lr= 5.929e-06,
+    #     batch_size=400,
+    #     vae_end_value=0.001,
+    #     gmm_end_value= args.gmm_end_value,#0.005220209,
+    #     reg_end_value=0.385072058,#0.04072058,
+    #     cat_end_value=0.005362321,
+    #     log_scaled=True,
+    #     seed = seed,
+    #     )
     
+
+    # training_setup = TrainingSetup(
+    #     # Phase I: reines VAE-Warmup (Rekon + globaler KLD-Ramp)
+    #     warmup_epochs     = 25,
+    #     vae_epochs        = 25,
+    #     adapt_epochs      = 15,   # 20-25, je nach Datensatz
+    #     # Phase II: Clustering
+    #     kmeans_init_epoch = 25,   # direkt nach Warmup
+    #     gmm_epochs        = 80,   # kürzer, stabilisiert
+    #     cat_epochs        = 250,
+    #     reg_epochs        = 250,
+
+    #     # Da LambdaLR/Warmup und LinearLR im Wesentlichen auf warmup_epochs  
+    #     # abzielen, können wir die alten Parameter entfernen:
+    #     clustering_warmup = 25,   # optional, aber = warmup_epochs
+    #     linear_epochs     = 25,   # optional → gleich warmup_epochs 
+
+    #     # verbleibende Scheduler-Settings unverändert:
+    #     annealing_type    = "linear",
+    #     cosine_T_max      = 400,
+    #     cosine_eta_min    = 1.2e-08,
+    #     vae_lr_factor     = 0.777187766,
+    #     vae_lr_patience   = 30,
+    # )
+
+    training_config = TrainingConfig(
+        # Lernraten
+        vae_lr          = 0.002118,   # aus Run
+        clustering_lr   = 0.000335,   # aus Run
+
+        # Gewichtungen
+        recon_weight    = 0.093868,   # aus Run
+        kld_weight      = 0.000107,   # aus Run
+
+        # Endwerte für Scheduling der Loss-Terme
+        vae_end_value   = 0.001,      # unverändert
+        gmm_end_value   = 0.006894,   # aus Run
+        reg_end_value   = 0.403404,   # aus Run
+        cat_end_value   = 0.011894,   # aus Run
+
+        # Sonstiges
+        log_scaled      = True,       # unverändert
+        seed            = seed,       # unverändert
+    )
 
     training_setup = TrainingSetup(
         # Phase I: reines VAE-Warmup (Rekon + globaler KLD-Ramp)
-        warmup_epochs     = 25,
-        vae_epochs        = 25,
-        adapt_epochs      = 15,   # 20-25, je nach Datensatz
+        warmup_epochs     = 20,       # aus Run
+        vae_epochs        = 25,       # unverändert
+        adapt_epochs      = 20,       # aus Run
+
         # Phase II: Clustering
-        kmeans_init_epoch = 25,   # direkt nach Warmup
-        gmm_epochs        = 80,   # kürzer, stabilisiert
-        cat_epochs        = 250,
-        reg_epochs        = 250,
+        kmeans_init_epoch = 20,       # = warmup_epochs
+        gmm_epochs        = 50,       # aus Run
+        cat_epochs        = 250,      # unverändert
+        reg_epochs        = 250,      # unverändert
 
-        # Da LambdaLR/Warmup und LinearLR im Wesentlichen auf warmup_epochs  
-        # abzielen, können wir die alten Parameter entfernen:
-        clustering_warmup = 25,   # optional, aber = warmup_epochs
-        linear_epochs     = 25,   # optional → gleich warmup_epochs 
+        # Scheduler-Parametrierung (am warmup orientiert)
+        clustering_warmup = 20,       # = warmup_epochs
+        linear_epochs     = 20,       # = warmup_epochs
 
-        # verbleibende Scheduler-Settings unverändert:
-        annealing_type    = "linear",
-        cosine_T_max      = 400,
-        cosine_eta_min    = 1.2e-08,
-        vae_lr_factor     = 0.777187766,
-        vae_lr_patience   = 30,
+        # restliche Scheduler-Settings
+        annealing_type    = "linear", # unverändert
+        cosine_T_max      = 400,      # unverändert
+        cosine_eta_min    = 1.2e-08,  # unverändert
+
+        # VAE-LR-Scheduler
+        vae_lr_factor     = 0.775108, # aus Run
+        vae_lr_patience   = 30,       # aus Run
     )
-
-
 
     data_config = DataConfig(
         data_dir='/home/a/a271125/work/data/slp.N_djfm_6h_aac_detrend_1deg_north_atlantic.nc',
         log_dir='/work/aa0238/a271125/logs/StableVAE',
-        experiment='Exp_400Epochs',
+        experiment='Exp_test_smoothing',
         num_workers=64,
         )
     hardware_config = HardwareConfig(devices=(0,))
