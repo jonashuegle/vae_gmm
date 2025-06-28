@@ -40,11 +40,20 @@ def train_vae(config, checkpoint_dir=None):
     os.makedirs(interim_results_dir, exist_ok=True)
     result_file = os.path.join(interim_results_dir, f"trial_{trial_id}.json")
     
-    # Wenn Ergebnisse bereits existieren, diese zurückgeben
     if os.path.exists(result_file):
         print(f"Lade vorhandene Ergebnisse für Trial {trial_id}")
         with open(result_file, 'r') as f:
-            metrics = json.load(f)
+            result = json.load(f)
+        metrics = result["metrics"] if "metrics" in result else result
+        # Reporte die Metriken explizit, damit Ray Tune sie findet:
+        tune.report(
+            silhouette=metrics["silhouette"],
+            loss_recon=metrics["loss_recon"],
+            calinski_harabasz=metrics["calinski_harabasz"],
+            davies_bouldin=metrics["davies_bouldin"],
+            cluster_entropy=metrics["cluster_entropy"],
+            smoothness=metrics["smoothness"],
+        )
         return metrics
     
     print(f"\n{'='*50}")
@@ -151,6 +160,15 @@ def train_vae(config, checkpoint_dir=None):
     with open(result_file, 'w') as f:
         json.dump(result, f, indent=2)
 
+    tune.report(
+        silhouette=metrics["silhouette"],
+        loss_recon=metrics["loss_recon"],
+        calinski_harabasz=metrics["calinski_harabasz"],
+        davies_bouldin=metrics["davies_bouldin"],
+        cluster_entropy=metrics["cluster_entropy"],
+        smoothness=metrics["smoothness"],
+    )
+
     return metrics
 
 
@@ -211,9 +229,9 @@ if __name__ == "__main__":
         "clustering_lr": tune.loguniform(1e-6, 5e-4),
 
         # Loss Weights
-        "recon_weight": tune.loguniform(1e-3, 2e-1),  # 0.1 ist guter Default
-        "kld_weight": tune.loguniform(1e-5, 1e-2),    # 0.0001 - 0.001 je nach Fall
-
+        "recon_weight": tune.loguniform(5e-2, 1.0),  # 0.1 ist guter Default
+        
+        "vae_end_value": tune.loguniform(1e-5, 1e-2),    # 0.0001 - 0.001 je nach Fall
         "gmm_end_value": tune.uniform(0.003, 0.01),
         "reg_end_value": tune.uniform(0.02, 0.5),
         "cat_end_value": tune.loguniform(0.001, 0.05),
@@ -237,7 +255,7 @@ if __name__ == "__main__":
             "vae_lr": 0.000193066,
             "clustering_lr": 5.929e-06,
             "recon_weight": 0.1,
-            "kld_weight": 0.0001,
+            "vae_end_value": 0.001,
             "gmm_end_value": 0.005220209,
             "reg_end_value": 0.04072058,
             "cat_end_value": 0.005362321,
