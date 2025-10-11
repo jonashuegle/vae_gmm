@@ -26,17 +26,32 @@ from typing import List, Tuple, Dict, Any, Optional
 
 
 def lr_lambda(epoch, warmup_epochs = 35, linear_epochs=65):
-            # Beispiel: In den ersten warmup_epochs (z. B. 25) LR=0
-            if epoch < warmup_epochs:
-                return 0.0
-            elif epoch < (warmup_epochs+linear_epochs):
-                return float(epoch - warmup_epochs) / linear_epochs
-            else:
-                return 1.0
+    """"
+    Calculates a linear learning rate annealing factor.
+    Args:
+        epoch (int): Current epoch number.
+        warmup_epochs (int): Number of epochs for warmup phase.
+        linear_epochs (int): Number of epochs for linear annealing phase.
+    Returns:
+        float: Annealing factor for the learning rate.
+    """
+    if epoch < warmup_epochs:
+        return 0.0
+    elif epoch < (warmup_epochs+linear_epochs):
+        return float(epoch - warmup_epochs) / linear_epochs
+    else:
+        return 1.0
 
 
 
 class Encoder(nn.Module):
+    """
+    Encoder-Network for the VAE.
+    This network consists of several linear layers with Batch Normalization, Dropout, and ReLU activations.
+    Layer settings are defined in the ModelConfig (Number of Neuron, Layers and Dropouts).
+    The last layer outputs the mean and log variance for the latent space.
+
+    """
     def __init__(self, model_config: ModelConfig):
         super().__init__()
         self.model_config = model_config
@@ -69,6 +84,12 @@ class Encoder(nn.Module):
         return mean, log_var
 
 class Decoder(nn.Module):
+    """
+    Decoder-Network for the VAE.
+    This network consists of several linear layers with Batch Normalization, Dropout, and ReLU activations.
+    Layer settings are defined in the ModelConfig (Number of Neuron, Layers and Dropouts).
+    The last layer outputs the reconstructed input, which is reshaped to the original input shape.
+    """
     def __init__(self, model_config: ModelConfig):
         super().__init__()
 
@@ -93,7 +114,7 @@ class Decoder(nn.Module):
 
         self.decoder = nn.Sequential(*layers)
         self.final_linear = nn.Linear(input_size, np.prod(self.model_config.input_shape))
-        self.final_activation = nn.Tanh()
+        self.final_activation = nn.Tanh() ## remove final activation function! (currently optimized for this activation function)
 
     def forward(self, x):
         x = self.decoder(x)
@@ -104,6 +125,15 @@ class Decoder(nn.Module):
         
 
 class VAE(pl.LightningModule):
+    """
+    Variational Autoencoder (VAE) with Gaussian Mixture Model (GMM) clustering.
+    This module implements a VAE with an encoder and decoder network.
+    The encoder outputs the mean and log variance for the latent space, which are used for reparameterization.
+    The decoder reconstructs the input from the latent space.
+    The model also includes GMM clustering with trainable cluster parameters (pi, mu_c, log_var_c).
+    The loss function combines the reconstruction loss, global KLD, cluster KLD, categorical KLD, and variance regularization.
+    The model supports annealing for the KLD weight and other hyperparameters.
+    """
     def __init__(self, model_config: ModelConfig, training_config: TrainingConfig, training_setup: TrainingSetup):
         super().__init__()
         self.model_config = model_config
@@ -115,7 +145,7 @@ class VAE(pl.LightningModule):
         self.encoder = Encoder(model_config)
         self.decoder = Decoder(model_config)
 
-        # Setze Dummy-Werte für die Clusterparameter
+        # Set dummy values for GMM training parameters - will be initialized later
         self.pi = nn.Parameter(torch.ones(self.model_config.num_clusters) / self.model_config.num_clusters, requires_grad=False)
         self.mu_c = nn.Parameter(torch.zeros(self.model_config.num_clusters, self.model_config.layer_sizes[-1]), requires_grad=False)
         self.log_var_c = nn.Parameter(torch.zeros(self.model_config.num_clusters, self.model_config.layer_sizes[-1]), requires_grad=False)
@@ -130,8 +160,10 @@ class VAE(pl.LightningModule):
         self.automatic_optimization = False
 
     def initialize_cluster_parameters(self):
-        """Initialisiert nur die Cluster-Zentren mit K-Means, ohne PCA oder weitere Transformationen.
-        Speichert zusätzlich die z_sample und die zugehörigen Clusterlabels im Log-Verzeichnis.
+        """
+        Initializes the clustering parameters (pi, mu_c, log_var_c) using K-Means++.
+        This method collects samples from the encoder, applies K-Means++ to the latent space,
+        and initializes the cluster parameters.
         """
         # Kodierte Daten aus dem Encoder holen
         samples = self.collect_samples(
@@ -181,78 +213,96 @@ class VAE(pl.LightningModule):
 
     def get_annealing_factor(self, current_epoch, start_epoch, duration, end_value):
         """
-        Berechnet den Annealing-Faktor mit definierter Start- und Endgrenze.
+        Calculates the annealing factor with defined start and end boundaries.
 
         Args:
-            current_epoch (int): Aktuelle Epoche.
-            start_epoch (int): Startpunkt des Annealings.
-            duration (int): Dauer des Annealings.
-            end_value (float): Zielwert am Ende des Annealings.
-            annealing_type (str): Art des Annealings, entweder "sigmoid" oder "linear".
+            current_epoch (int): Current epoch.
+            start_epoch (int): Start point of the annealing.
+            duration (int): Duration of the annealing.
+            end_value (float): Target value at the end of the annealing.
+            annealing_type (str): Type of the annealing, either "sigmoid" or "linear".
 
         Returns:
-            float: Der berechnete Annealing-Faktor.
+            float: The calculated annealing factor.
         """
         if not self.training_config.use_annealing:
             return end_value
-        
-        min_value = 1e-3 * end_value  # Startwert des Annealings
+
+        min_value = 1e-3 * end_value  # Start value of the annealing
 
         if current_epoch < start_epoch:
-            return min_value  # Vor dem Start bleibt der Wert minimal
-        
-        # Fortschritt berechnen (zwischen 0 und 1)
+            return min_value  # Before the start, the value remains minimal
+
+        # Calculate progress (between 0 and 1)
         progress = (current_epoch - start_epoch) / duration
-        progress = np.clip(progress, 0.0, 1.0)  # Begrenzen auf [0, 1]
+        progress = np.clip(progress, 0.0, 1.0)  # Limit to [0, 1]
 
         if self.training_setup.annealing_type == "sigmoid":
-            # Sigmoid-Annealing (sanfter Übergang)
+            # Sigmoid annealing (smooth transition from min_value to end_value)
             sigmoid_progress = 1 / (1 + np.exp(-10 * (progress - 0.5)))
             return min_value + (sigmoid_progress * (end_value - min_value))
 
         elif self.training_setup.annealing_type == "linear":
-            # Lineares Annealing (gleichmäßige Erhöhung von min_value zu end_value)
+            # Linear annealing (uniform increase from min_value to end_value)
             return min_value + (progress * (end_value - min_value))
         
         else:
-            raise ValueError("annealing_type muss 'sigmoid' oder 'linear' sein")
+            raise ValueError("annealing_type must be 'sigmoid' or 'linear'. ")
 
         
 
     def get_kld_weight(self):
-        # Lade den Validation Loss
+        # Load the validation loss
         val_loss = self.trainer.callback_metrics.get('val/loss/recon')
 
-        # Überprüfen, ob val_loss gültig ist (kein None)
+        # Check if val_loss is valid (not None)
         if val_loss is not None:
-            # Konvertiere den Tensor zu einem float (falls erforderlich)
+            # Convert the tensor to a float (if necessary)
             if isinstance(val_loss, torch.Tensor):
                 val_loss = val_loss.item()
 
-            # Entferne alle None-Werte aus der Historie, um min() sicher verwenden zu können
+            # Remove all None values from the history to safely use min()
             valid_losses = [loss for loss in self.val_loss_hist if loss is not None]
 
-            # Wenn es gültige Werte in der Historie gibt, prüfe, ob val_loss kleiner ist
+            # If there are valid values in the history, check if val_loss is smaller
             if valid_losses and min(valid_losses) >= val_loss:
                 self.training_config.kld_weight *= 1.1
 
             self.training_config.kld_weight = min(self.training_config.kld_weight, self.training_config.vae_end_value)
-            # Speichere den aktuellen Loss in der Verlaufs-Historie
+            # Store the current loss in the history
             self.val_loss_hist.append(val_loss)
 
 
     def reparameterize(self, mu, log_var):
+        """
+        Reparameterization trick to sample from the latent space.
+        Args:
+            mu (Tensor): Mean of the latent space.
+            log_var (Tensor): Log variance of the latent space.
+        Returns:
+            Tensor: Sampled latent variable z.
+        """
         std = torch.exp(0.5 * log_var)
         eps = torch.randn_like(std)
         return mu + eps * std
 
     def forward(self, x):
+        """
+        Forward pass through the VAE.
+        """
         mu, log_var = self.encoder(x)
         z = self.reparameterize(mu, log_var)
         x_recon = self.decoder(z)
         return x_recon, mu, log_var, z
 
     def gaussian_mixture_log_prob(self, z):
+        """        
+        Computes the log probability of the latent variable z under a Gaussian Mixture Model (GMM).
+        Args:
+            z (Tensor): Latent variable (batch_size, latent_dim).
+        Returns:
+            Tuple[Tensor, Tensor]: Log probability of z under the GMM and soft assignments (gamma).
+        """
         z = z.unsqueeze(1)  # [B, 1, D]
         mu_c = self.mu_c.unsqueeze(0)  # [1, K, D]
         log_var_c = self.log_var_c.unsqueeze(0)  # [1, K, D]
@@ -268,6 +318,13 @@ class VAE(pl.LightningModule):
         return log_p_z, gamma.detach()
 
     def variance_regularization(self, log_var_c):
+        """
+        Regularizes the variance of the cluster parameters to ensure stability.
+        Args:
+            log_var_c (Tensor): Log variance of the cluster parameters (num_clusters, latent_dim)
+        Returns:
+            Tensor: Regularization term (scalar)
+        """
         std_c = torch.exp(0.5 * log_var_c)
         max_std = std_c.max(dim=0)[0]
         min_std = std_c.min(dim=0)[0]
@@ -278,59 +335,74 @@ class VAE(pl.LightningModule):
 
     def cluster_balance_metric(self, gamma, threshold_factor=0.5):
         """
-        Bewertet die Clusterverteilung und bestraft schrumpfende Cluster.
+        Evaluates the cluster distribution and penalizes shrinking clusters.
 
         Args:
             gamma (Tensor): Soft Assignments (batch_size, num_clusters)
-            threshold_factor (float): Schwelle, ab der Cluster als geschrumpft gelten
-            epsilon (float): Numerische Stabilität
+            threshold_factor (float): Threshold below which clusters are considered shrunk
+            epsilon (float): Numerical stability
 
         Returns:
-            Tensor: Score (höher ist besser)
+            Tensor: Score (higher is better)
         """
-        # 1. Clustergrößen berechnen
-        cluster_sizes = gamma.sum(0)  # Anzahl der Zuweisungen je Cluster
-        avg_cluster_size = cluster_sizes.mean()  # Durchschnittliche Clustergröße
+        # 1. Compute cluster sizes
+        cluster_sizes = gamma.sum(0)  # Number of assignments per cluster
+        avg_cluster_size = cluster_sizes.mean()  # Average cluster size
 
-        # 2. Shrinkage Penalty: Strafe für Cluster < threshold_factor * Durchschnitt
+        # 2. Shrinkage Penalty: Penalizes clusters < threshold_factor * average
         shrinkage_penalty = torch.sum(torch.relu((threshold_factor * avg_cluster_size) - cluster_sizes))
 
-        # 3. Balance Penalty: Strafe für unausgewogene Cluster (Standardabweichung)
+        # 3. Balance Penalty: Penalizes imbalanced clusters (standard deviation)
         balance_penalty = torch.std(cluster_sizes)
 
-        # 4. Kombinierter Score (je kleiner, desto schlechter)
+        # 4. Combined Score (the smaller, the worse)
         score = - (balance_penalty + 5.0 * shrinkage_penalty)
 
-        return score  # Höherer Score = besseres Clustering
-    
+        return score  # Higher score = better clustering
 
     
     def compute_silhouette(self, z, gamma):
+        """
+        Computes the silhouette score for the given latent variables and soft assignments.
+        Args:
+            z (Tensor): Latent variables (batch_size, latent_dim).
+            gamma (Tensor): Soft assignments (batch_size, num_clusters). 
+        Returns:
+            float: Silhouette score for the clusters.           
+        """
         cluster_labels = torch.argmax(gamma, dim=1).cpu().numpy()
-        
-        # Prüfe Anzahl der uniquen Labels
+
+        # Check number of unique labels
         unique_labels = len(np.unique(cluster_labels))
-        
-        # Wenn weniger als 2 Cluster, gebe einen Default-Wert zurück
+
+        # If less than 2 clusters, return a default value
         if unique_labels < 2:
-            return torch.tensor(-1.0).to(self.device)  # oder einen anderen sinnvollen Default-Wert
-            
+            return torch.tensor(-1.0).to(self.device)  # or another meaningful default value
+
         return silhouette_score(z.cpu().numpy(), cluster_labels)
 
 
     def compute_loss_components(self, x, x_recon, mu, log_var, z):
         """
-        Berechnet die einzelnen Loss-Komponenten und gibt sie als Dictionary zurück.
+        Computes the individual loss components and returns them as a dictionary.
+        Args:
+            x (Tensor): Original input data.
+            x_recon (Tensor): Reconstructed input data from the decoder.
+            mu (Tensor): Mean of the latent space from the encoder.
+            log_var (Tensor): Log variance of the latent space from the encoder.
+            z (Tensor): Sampled latent variable from the reparameterization trick.
+        Returns:
+            Dict[str, Tensor]: Dictionary containing the individual loss components.
         """
         components = {}
 
-        # Rekonstruktionsloss (bereits mit dem konfigurierten Gewicht)
+        # Reconstruction loss (already weighted with the configured weight)
         components['recon'] = self.loss_func(x_recon, x) * self.training_config.recon_weight
 
-        # Globaler KLD-Loss
+        # Global KLD loss
         components['global_kld'] = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=1).mean()
 
-        # Falls der Clustering-Teil aktiv ist:
+        # If clustering part is active:
         if self.current_epoch >= self.training_setup.warmup_epochs:
             log_p_z, gamma = self.gaussian_mixture_log_prob(z)
             kl_loss_clusters = torch.zeros(1, device=self.device)
@@ -340,30 +412,30 @@ class VAE(pl.LightningModule):
                 kl_loss_clusters -= 0.5 * cluster_kl.mean()
             components['cluster_kld'] = kl_loss_clusters
 
-            # Kategorischer Loss (z.B. für die Cluster-Prioren)
+            # Categorical loss (e.g. for the cluster priors)
             cluster_props = gamma.mean(0)
             cat_kl = torch.sum(cluster_props * torch.log(cluster_props / (self.pi + 1e-10)))
             if self.training_config.log_scaled:
                 cat_kl = torch.log(1 + cat_kl)
             components['cat_kld'] = cat_kl
 
-            # Varianz-regularisierung der Cluster-Parameter
+            # Variance regularization of the cluster parameters
             components['var_reg'] = self.variance_regularization(self.log_var_c)
 
         return components
 
     def loss_function(self, x, x_recon, mu, log_var, z, prefix='train'):
         """
-        Berechnet den Gesamtloss als Summe der einzelnen Komponenten, gewichtet mit
-        dynamisch berechneten Faktoren.
+        Computes the overall loss as the sum of the individual components, weighted by
+        dynamically computed factors.
         """
-        # Berechne einzelne Loss-Komponenten
+        # Compute individual loss components
         components = self.compute_loss_components(x, x_recon, mu, log_var, z)
 
-        # Basis-Epoche für den Clustering-Teil
+        # Base epoch for the clustering part
         gmm_epoch = self.training_setup.vae_epochs + self.training_setup.adapt_epochs + self.training_setup.warmup_epochs
 
-        # Berechne den VAE-Faktor (globaler KLD)
+        # Compute the VAE factor (global KLD)
         if self.current_epoch < self.training_setup.vae_epochs + self.training_setup.warmup_epochs:
             vae_factor = self.training_config.kld_weight
         else:
@@ -374,10 +446,10 @@ class VAE(pl.LightningModule):
                                         self.training_setup.warmup_epochs))
                 / self.training_setup.gmm_epochs
             )
-            reduction_factor = 0.7  # Beispielwert: 0.7 für 30% Reduktion
+            reduction_factor = 0.7  # Example value: 0.7 for 30% reduction
             vae_factor = self.training_config.vae_end_value * (reduction_factor + (1 - reduction_factor) * (1 - gmm_progress))
 
-        # Berechne die weiteren Faktoren
+        # Compute the other factors
         self.factors = {
             "vae_factor": vae_factor,
             "gmm_factor": self.get_annealing_factor(current_epoch=self.current_epoch,
@@ -394,10 +466,10 @@ class VAE(pl.LightningModule):
                                                     end_value=self.training_config.cat_end_value),
         }
 
-        # Verwende den dynamischen Multiplikator aus der Config (z. B. aus training_config)
+        # Use the dynamic multiplier from the config (e.g. from training_config)
         dynamic_multiplier = self.training_config.dynamic_multiplier
 
-        # Füge die gewichteten Loss-Komponenten in ein Dictionary ein:
+        # Add the weighted loss components to a dictionary:
         losses = {}
         losses[f'{prefix}/loss/recon'] = components['recon']
         losses[f'{prefix}/loss/global_kld'] = components['global_kld'] * self.factors["vae_factor"]
@@ -405,9 +477,9 @@ class VAE(pl.LightningModule):
         losses[f'{prefix}/loss/cat_kld'] = components.get('cat_kld', 0) * self.factors["cat_factor"] * dynamic_multiplier
         losses[f'{prefix}/loss/var_reg'] = components.get('var_reg', 0) * self.factors["reg_factor"] * dynamic_multiplier
 
-        # Kombiniere die Loss-Komponenten zum Gesamtloss.
-        # Wenn der Clustering-Teil aktiv ist, summiere alle gewichteten Komponenten;
-        # ansonsten nur die Rekonstruktion und den globalen KLD.
+        # Combine the loss components into the total loss.
+        # If the clustering part is active, sum all weighted components;
+        # otherwise only the reconstruction and the global KLD.
         if self.current_epoch >= self.training_setup.warmup_epochs:
             total_loss = sum(value for key, value in losses.items() if not key.endswith('total'))
         else:
@@ -418,6 +490,10 @@ class VAE(pl.LightningModule):
 
 
     def on_train_epoch_start(self):
+        """
+        Called at the start of each training epoch.
+        Initializes the KLD weight and clustering parameters if necessary.
+        """
 
         self.get_kld_weight()
 
@@ -431,6 +507,14 @@ class VAE(pl.LightningModule):
 
 
     def training_step(self, batch, batch_idx):
+        """
+        Training step for the VAE-GMM model.
+        Args:
+            batch (Tuple[Tensor, Tensor]): A batch of data (input, target).
+            batch_idx (int): Index of the current batch.
+        Returns:
+            Tensor: The total loss for the current batch.
+        """
         vae_opt, clustering_opt = self.optimizers()
         x, _ = batch
         
@@ -460,23 +544,23 @@ class VAE(pl.LightningModule):
 
     def compute_cluster_metrics(self, z, gamma):
         """
-        Berechnet verschiedene Metriken zur Bewertung der Cluster-Stabilität und -Qualität:
-        - Globaler Silhouette Score
-        - Per-Cluster Silhouette Scores (als Dictionary)
+        Computes various metrics to evaluate cluster stability and quality:
+        - Global Silhouette Score
+        - Per-Cluster Silhouette Scores (as Dictionary)
         - Davies-Bouldin Index
         - Calinski-Harabasz Index
         - Cluster Balance
-        - Lokale Dichte
-        - Latente Smoothness, Dichtevariation und Gaußsche Ähnlichkeit
-        - Cluster-Frequenzen und Verteilungsentropie
-        - Varianz der einzelnen Latent-Dimensionen
+        - Local Density
+        - Latent Smoothness, Density Variation, and Gaussian Similarity
+        - Cluster Frequencies and Distribution Entropy
+        - Variance of Individual Latent Dimensions
         """
-        # Konvertiere z in NumPy und bestimme harte Clusterzuweisungen
+        # Convert z to NumPy and determine hard cluster assignments
         z_np = z.cpu().numpy()
         cluster_labels = torch.argmax(gamma, dim=1).cpu().numpy()
         unique_labels = np.unique(cluster_labels)
-        
-        # Globaler Silhouette Score
+
+        # Global Silhouette Score
         if len(unique_labels) < 2:
             global_sil = -1.0
         else:
@@ -494,40 +578,40 @@ class VAE(pl.LightningModule):
                     per_cluster_sil[f"cluster_{i}"] = np.nan
                 else:
                     per_cluster_sil[f"cluster_{i}"] = float(np.mean(sample_sil[idx]))
-        
-        # Davies-Bouldin und Calinski-Harabasz Index (nur wenn mindestens 2 Cluster existieren)
+
+        # Davies-Bouldin und Calinski-Harabasz Index (only if at least 2 clusters exist)
         if len(unique_labels) < 2:
             db_index = np.nan
             ch_index = np.nan
         else:
             db_index = davies_bouldin_score(z_np, cluster_labels)
             ch_index = calinski_harabasz_score(z_np, cluster_labels)
-        
-        # Cluster Balance (wie bereits definiert)
+
+        # Cluster Balance (as previously defined)
         balance = self.cluster_balance_metric(gamma)
         balance_val = balance.item() if isinstance(balance, torch.Tensor) else balance
-        
-        # Lokale Dichte im Latent Space
+
+        # Local Density in Latent Space
         local_density = self.compute_local_density(z)
         local_density_val = local_density.item() if isinstance(local_density, torch.Tensor) else local_density
-        
-        # Latente Smoothness und zugehörige Metriken
+
+        # Latent Smoothness and associated metrics
         smoothness, density_variation, gaussian_similarity = self.compute_latent_smoothness(z)
         smoothness_val = smoothness.item() if isinstance(smoothness, torch.Tensor) else smoothness
         density_variation_val = density_variation.item() if isinstance(density_variation, torch.Tensor) else density_variation
         gaussian_similarity_val = gaussian_similarity.item() if isinstance(gaussian_similarity, torch.Tensor) else gaussian_similarity
-        
-        # Cluster-Frequenzen und Entropie
+
+        # Cluster Frequencies and Entropy
         cluster_sizes = gamma.sum(dim=0).cpu().numpy()
         frequencies = cluster_sizes / np.sum(cluster_sizes)
         entropy = -np.sum(frequencies * np.log(frequencies + 1e-10))
-        
-        # Varianz der einzelnen Latent-Dimensionen
+
+        # Variance of Individual Latent Dimensions
         #latent_variances = np.var(z_np, axis=0)
         
         metrics = {
             'global_silhouette': global_sil,
-            'per_cluster_silhouette': per_cluster_sil,  # Dictionary mit Werten pro Cluster
+            'per_cluster_silhouette': per_cluster_sil,  # Dictionary with per-cluster scores
             'davies_bouldin_index': db_index,
             'calinski_harabasz_index': ch_index,
             'balance': balance_val,
@@ -541,13 +625,16 @@ class VAE(pl.LightningModule):
         return metrics
 
     def validation_step(self, batch, batch_idx):
+        """
+        Validation step for the VAE-GMM model.
+        """
         x, _ = batch
         with torch.no_grad():
             x_recon, mu, log_var, z = self(x)
-            # Berechne den Loss (inklusive Rekonstruktion, globaler KLD etc.)
+            # Compute the loss (including reconstruction, global KLD, etc.)
             losses = self.loss_function(x, x_recon, mu, log_var, z, prefix='val')
-            
-            # Berechne Metriken, die immer bestimmt werden können
+
+            # Compute metrics that can always be determined
             smoothness, density_variation, gaussian_similarity = self.compute_latent_smoothness(z)
             local_density = self.compute_local_density(z)
             losses['val/metric/smoothness'] = smoothness
@@ -556,16 +643,16 @@ class VAE(pl.LightningModule):
             losses['val/metric/local_density'] = local_density
             
             if self.current_epoch >= self.training_setup.kmeans_init_epoch:
-                # Sobald genügend Epochen vergangen sind, berechne auch die clusterbezogenen Metriken:
+                # Once enough epochs have passed, also compute the cluster-related metrics:
                 _, gamma = self.gaussian_mixture_log_prob(z)
                 balance_score = self.cluster_balance_metric(gamma)
                 silhouette = self.compute_silhouette(z, gamma)
-                # Berechne weitere Cluster-Metriken
+                # Compute additional cluster metrics
                 cluster_metrics = self.compute_cluster_metrics(z, gamma)
                 
                 losses['val/metric/balance'] = balance_score
                 losses['val/metric/silhouette'] = silhouette
-                # Füge alle Schlüssel aus cluster_metrics hinzu
+                # Add all keys from cluster_metrics
                 for key, value in cluster_metrics.items():
                     if isinstance(value, dict):
                         for subkey, subvalue in value.items():
@@ -576,19 +663,17 @@ class VAE(pl.LightningModule):
                     else:
                         losses[f'val/metric/{key}'] = value
             else:
-                # Default-Werte setzen, wenn noch nicht genügend Epochen gelaufen sind:
+                # Default values if not enough epochs have passed yet:
                 losses['val/metric/balance'] = -1.0
                 losses['val/metric/silhouette'] = -1.0
                 losses['val/metric/global_silhouette'] = -1.0
                 losses['val/metric/davies_bouldin_index'] = 1000.0
                 losses['val/metric/calinski_harabasz_index'] = 0.0
                 losses['val/metric/cluster_entropy'] = -1.0
-                # Per-Cluster Silhouette für alle Cluster als -1
+                # Per-Cluster Silhouette Scores all set to -1.0
                 for i in range(self.model_config.num_clusters):
                     losses[f'cluster/per_cluster_silhouette/{i}'] = -1.0
 
-            # Debug-Ausgabe: welche Keys werden geloggt?
-            #print("Logged metric keys:", list(losses.keys()))
             
             self.log_dict(losses, batch_size=self.trainer.datamodule.batch_size,
                         on_step=False, on_epoch=True, sync_dist=True)
@@ -596,11 +681,15 @@ class VAE(pl.LightningModule):
         
 
     def on_train_epoch_end(self):
+        """
+        Called at the end of each training epoch.
+        Updates the learning rate schedulers and logs the annealing factors.
+        """
         opt_vae, opt_cluster = self.optimizers()
         cluster_scheduler = self.lr_schedulers()[1]
         cluster_scheduler.step()
 
-        # Aktualisiere den dynamischen Multiplikator, falls nötig:
+        # Update the dynamic multiplier if necessary:
         if isinstance(self.training_config.dynamic_update_epoch, (list, tuple)):
             if self.current_epoch in self.training_config.dynamic_update_epoch:
                 self.training_config.dynamic_multiplier *= self.training_config.dynamic_reduction_factor
@@ -613,7 +702,7 @@ class VAE(pl.LightningModule):
 
         self.log('learning_rate/vae', opt_vae.param_groups[0]["lr"], prog_bar=True)
         self.log('learning_rate/clustering', opt_cluster.param_groups[0]["lr"], prog_bar=True)
-        # Logge die annealing Faktoren als Metriken:
+        # Log the annealing factors as metrics:
         self.log('annealing/vae_factor', self.factors["vae_factor"])
         self.log('annealing/gmm_factor', self.factors["gmm_factor"]*self.training_config.dynamic_multiplier)
         self.log('annealing/reg_factor', self.factors["reg_factor"]*self.training_config.dynamic_multiplier)
@@ -621,17 +710,21 @@ class VAE(pl.LightningModule):
 
 
     def on_validation_epoch_end(self):
+        """
+        Called at the end of each validation epoch.
+        Updates the VAE scheduler and logs the TSNE visualization every 5 epochs.
+        """
         annealing_epochs = self.training_setup.warmup_epochs + self.training_setup.vae_epochs
 
         current_loss = self.trainer.callback_metrics.get('val/loss/recon')
         if current_loss is not None:
             if self.current_epoch > annealing_epochs:
-                # VAE Scheduler erst nach der Annealing-Phase aktivieren
-                vae_scheduler = self.lr_schedulers()[0]  # Der erste Scheduler ist für VAE
+                # VAE Scheduler after the warmup epochs
+                vae_scheduler = self.lr_schedulers()[0]  # The first scheduler is for VAE
                 vae_scheduler.step(current_loss)
 
 
-        # 4. TSNE Visualisierung alle 5 Epochen
+        # 4. TSNE Visualization every 5 epochs
         if self.training_config.log_img and self.current_epoch % 5 == 0:
             samples = self.collect_samples(return_mu=True, return_x=False, return_timestamp=False)
             mu = torch.tensor(samples["mu"])
@@ -640,91 +733,115 @@ class VAE(pl.LightningModule):
 
     def cluster_balance_metric(self, gamma, threshold_factor=0.5):
         """
-        Bewertet die Clusterverteilung und bestraft schrumpfende Cluster.
+        Evaluates the cluster distribution and penalizes shrinking clusters.
 
         Args:
             gamma (Tensor): Soft Assignments (batch_size, num_clusters)
-            threshold_factor (float): Schwelle, ab der Cluster als geschrumpft gelten
-            epsilon (float): Numerische Stabilität
+            threshold_factor (float): Threshold below which clusters are considered shrunk
+            epsilon (float): Numerical stability
 
         Returns:
-            Tensor: Score (höher ist besser)
+            Tensor: Score (higher is better)
         """
-        # 1. Clustergrößen berechnen
-        cluster_sizes = gamma.sum(0)  # Anzahl der Zuweisungen je Cluster
-        avg_cluster_size = cluster_sizes.mean()  # Durchschnittliche Clustergröße
+        # 1. Compute cluster sizes
+        cluster_sizes = gamma.sum(0)  # Number of assignments per cluster
+        avg_cluster_size = cluster_sizes.mean()  # Average cluster size
 
-        # 2. Shrinkage Penalty: Strafe für Cluster < threshold_factor * Durchschnitt
+        # 2. Shrinkage Penalty: Penalty for clusters < threshold_factor * average
         shrinkage_penalty = torch.sum(torch.relu((threshold_factor * avg_cluster_size) - cluster_sizes))
 
-        # 3. Balance Penalty: Strafe für unausgewogene Cluster (Standardabweichung)
+        # 3. Balance Penalty: Penalty for imbalanced clusters (standard deviation)
         balance_penalty = torch.std(cluster_sizes)
 
-        # 4. Kombinierter Score (je kleiner, desto schlechter)
+        # 4. Combined Score (the smaller, the worse)
         score = - (balance_penalty + 5.0 * shrinkage_penalty)
 
-        return score  # Höherer Score = besseres Clustering
-    
-    
+        return score  # Higher score = better clustering
+
+
     def compute_silhouette(self, z, gamma):
+        """
+        Computes the silhouette score for the given latent variables and soft assignments.
+        Args:
+            z (Tensor): Latent variables (batch_size, latent_dim).
+            gamma (Tensor): Soft assignments (batch_size, num_clusters).
+        Returns:
+            float: Silhouette score for the clusters.
+        """
+        # Convert z to NumPy and determine hard cluster assignments
         cluster_labels = torch.argmax(gamma, dim=1).cpu().numpy()
-        
-        # Prüfe Anzahl der uniquen Labels
+
+        # Check number of unique labels
         unique_labels = len(np.unique(cluster_labels))
         
-        # Wenn weniger als 2 Cluster, gebe einen Default-Wert zurück
+        # If less than 2 clusters, return a default value
         if unique_labels < 2:
-            return torch.tensor(-1.0).to(self.device)  # oder einen anderen sinnvollen Default-Wert
-            
+            return torch.tensor(-1.0).to(self.device)  # or another meaningful default value
         return silhouette_score(z.cpu().numpy(), cluster_labels)
 
-    def compute_local_density(self, z):
+    def compute_local_density(self, z, k = 10):
         """
-        Berechnet die lokale Dichte für jedes Sample im Latent Space.
-        Ein niedriger Wert bedeutet eine gleichmäßigere Verteilung.
+        Computes the local density for each sample in the latent space.
+        A lower value indicates a more uniform distribution.
+        Args:
+            z (Tensor): Latent variables (batch_size, latent_dim).
+            k (int): Number of nearest neighbors to consider for local density calculation.
+        Returns:
+            float: Local density for the latent space.
         """
         distances = torch.cdist(z, z)
-        k = 10
         k_nearest = torch.topk(distances, k=k+1, largest=False)[0]
-        k_nearest = k_nearest[:, 1:]  # Entferne Distanz zu sich selbst
+        k_nearest = k_nearest[:, 1:]  # Remove distance to self
         local_density = torch.std(k_nearest, dim=1).mean()
         return local_density
         
 
-    def compute_latent_smoothness(self, z):
-        # 1. Lokale Dichte-Variation
+    def compute_latent_smoothness(self, z, k=10):
+        """
+        Computes the smoothness of the latent space using:
+        - Local Density Variation
+        - Global Distribution Metrics (Gaussian similarity)
+        Args:
+            z (Tensor): Latent variables (batch_size, latent_dim).
+        Returns:
+            Tuple[float, float, float]: Smoothness score, local density variation, and Gaussian similarity.
+        """
+        # Local Density Variation
         distances = torch.cdist(z, z)
-        k = 10  # k nächste Nachbarn
         knn_distances, _ = torch.topk(distances, k, largest=False)
         density_variation = torch.std(knn_distances[:, 1:])  # Erste Distanz ist immer 0 (zu sich selbst)
         
-        # 2. Globale Verteilungs-Metrik
+        # Gaussian Similarity
         z_mean = torch.mean(z, dim=0)
         z_std = torch.std(z, dim=0)
-        gaussian_similarity = -torch.mean(torch.abs(z_std - 1.0))  # Nähe zur Standard-Normalverteilung
-        
-        # Kombinierte Metrik: Höhere Werte = bessere, glattere Verteilung
+        gaussian_similarity = -torch.mean(torch.abs(z_std - 1.0)) # Compares the std of z to 1.0, which is the ideal for a Gaussian distribution
+
+        # Combined Metric: Higher values = better, smoother distribution
         smoothness = -density_variation + gaussian_similarity
         
         return smoothness, density_variation, gaussian_similarity
 
     def collect_samples(self, return_mu=True, return_x=True, return_timestamp=True, dataloader = None):
         """
-        Sammelt für alle Batches im Validierungs-Dataloader:
-        - z_sample: Die enkodierten Repräsentationen (mu) vom Encoder,
-        - x_sample: Die Originaleingaben,
-        - timestamp: Einen Zeitstempel (aus info, z. B. info["timestamp"]).
-
-        Die Rückgabe erfolgt als Dictionary. Über die booleschen Flags
-        kann gesteuert werden, welche Werte berechnet und zurückgegeben werden.
+        Collects samples from the encoder and returns them as a dictionary.
+        Args:
+            return_mu (bool): Whether to return the latent means.
+            return_x (bool): Whether to return the original inputs.
+            return_timestamp (bool): Whether to return the timestamps.
+            dataloader (DataLoader, optional): Custom dataloader to use for sampling.
+        Returns:
+            Dict[str, np.ndarray]: Dictionary containing the collected samples.
+        - "mu": Latent means (if return_mu is True)
+        - "x": Original inputs (if return_x is True)
+        - "timestamp": Timestamps (if return_timestamp is True)
         """
-        self.encoder.eval()  # Eval-Modus für konsistente Ausgaben
+        self.encoder.eval() # Set the encoder to evaluation mode
         if dataloader is None:
             dataloader = self.trainer.datamodule.val_dataloader()
 
         mu_list, x_list, timestamp_list = [], [], []
         for batch in dataloader:
-            # Wir nehmen an, dass der Batch so aufgebaut ist: (x, info)
+            # Unpack the batch
             x, info = batch
             if return_mu:
                 with torch.no_grad():
@@ -733,7 +850,6 @@ class VAE(pl.LightningModule):
             if return_x:
                 x_list.append(x.cpu().numpy())
             if return_timestamp:
-                # Annahme: info enthält einen Schlüssel "timestamp", der für jedes Sample existiert.
                 timestamp_list.append(np.array(info["timestamp"]))
 
         self.encoder.train()
@@ -750,6 +866,11 @@ class VAE(pl.LightningModule):
 
 
     def log_tsne(self, mu):
+        """
+        Logs a t-SNE visualization of the latent space.
+        Args:
+            mu (Tensor): Latent means (batch_size, latent_dim).
+        """
         if not self.training_config.log_img:
             return
         # t-SNE Transformation
@@ -757,20 +878,20 @@ class VAE(pl.LightningModule):
         tsne = TSNE(n_components=2, random_state=42, perplexity=30, max_iter=300)
         mu_tsne = tsne.fit_transform(mu.cpu().numpy())
 
-        # Clusterzuweisungen
+        # Cluster assignments
         _, gamma = self.gaussian_mixture_log_prob(mu)
         cluster_labels = torch.argmax(gamma, dim=1).cpu().numpy()
 
-        # Berechne die Clusterzentren im t-SNE Raum
+        # Compute the cluster centers in the t-SNE space
         tsne_centers = np.array([
             mu_tsne[cluster_labels == i].mean(axis=0) for i in np.unique(cluster_labels)
         ])
 
-        # Farben für die Cluster aus der Seaborn-Palette
-        unique_clusters = sorted(np.unique(cluster_labels))  # Eindeutige, sortierte Cluster-Labels
-        palette = sns.color_palette("Set1", len(unique_clusters))   
+        # Colors for the clusters from the Seaborn palette
+        unique_clusters = sorted(np.unique(cluster_labels))  # Unique, sorted cluster labels
+        palette = sns.color_palette("Set1", len(unique_clusters))
 
-        # Visualisierung
+        # Visualization
         plt.figure(figsize=(10, 10))
         sns.scatterplot(
             x=mu_tsne[:, 0], 
@@ -781,153 +902,163 @@ class VAE(pl.LightningModule):
             legend="full"
         )
 
-        # Clusterzentren zeichnen (Farbe der entsprechenden Cluster)
+        # Draw cluster centers (color according to the respective cluster)
         for cluster_id, center in enumerate(tsne_centers):
             plt.scatter(
                 center[0], center[1],
-                marker='X', 
-                color=palette[cluster_id],  # Farbe des Clusters
+                marker='X',
+                color=palette[cluster_id],  # Color of the cluster
                 s=200, 
                 label=f'Cluster {unique_clusters[cluster_id]} Center'
             )
 
-        # Legende und Logging
+        # Legend and Logging
         plt.legend()
-        # Hier fehlt die Prüfung:
+        # Check for logger availability
         if hasattr(self, "logger") and self.logger is not None and hasattr(self.logger, "experiment"):
             self.logger.experiment.add_figure(f't-SNE_epoch_{self.current_epoch}', plt.gcf(), close=True)
         else:
-            print(f"t-SNE für Epoche {self.current_epoch} wird nicht geloggt (kein Logger verfügbar)")
-            
+            print(f"t-SNE for epoch {self.current_epoch} is not being logged (no logger available)")
+        # Save the figure
         plt.close()
 
 
     def get_latent_variances(self):
-        """Berechnet die Varianz jeder Dimension im Latent Space nach einem Forward-Pass."""
+        """Computes the variance of each dimension in the latent space after a forward pass."""
         samples = self.collect_samples(return_mu=True, return_x=False, return_timestamp=False)
         mu_all = samples["mu"]
 
-        variances = np.var(mu_all, axis=0)  # Varianz jeder Latent-Dimension berechnen
+        variances = np.var(mu_all, axis=0)  # Compute variance of each latent dimension
         return variances
 
 
     def on_fit_start(self):
         """ Called at the very beginning of fit, after checkpoint restore if any. """
-        # Zugriff auf Optimizer
+        # Access the optimizers
         opt_vae, opt_cluster = self.optimizers()
 
-        # Manuelles Setzen der Lernrate für den Clustering-Optimizer
+        # Manually set the learning rate for the clustering optimizer
         for pg in opt_cluster.param_groups:
             pg["lr"] = self.training_config.clustering_lr
             pg["initial_lr"] = self.training_config.clustering_lr
 
-        # Zugriff auf den Clustering-Scheduler
-        cluster_scheduler = self.lr_schedulers()[1]  # Kein ["scheduler"] hier
-        cluster_scheduler.last_epoch = -1  # Scheduler zurücksetzen
+        # Access the clustering scheduler
+        cluster_scheduler = self.lr_schedulers()[1]
+        cluster_scheduler.last_epoch = -1  # Reset scheduler
 
 
 
 
     def get_annealing_factor(self, current_epoch, start_epoch, duration, end_value):
         """
-        Berechnet den Annealing-Faktor mit definierter Start- und Endgrenze.
+        Computes the annealing factor with defined start and end boundaries.
 
         Args:
-            current_epoch (int): Aktuelle Epoche.
-            start_epoch (int): Startpunkt des Annealings.
-            duration (int): Dauer des Annealings.
-            end_value (float): Zielwert am Ende des Annealings.
-            annealing_type (str): Art des Annealings, entweder "sigmoid" oder "linear".
+            current_epoch (int): Current epoch.
+            start_epoch (int): Start point of the annealing.
+            duration (int): Duration of the annealing.
+            end_value (float): Target value at the end of the annealing.
+            annealing_type (str): Type of the annealing, either "sigmoid" or "linear".
 
         Returns:
-            float: Der berechnete Annealing-Faktor.
+            float: The computed annealing factor.
         """
         if not self.training_config.use_annealing:
             return end_value
-        
-        min_value = 1e-2 * end_value  # Startwert des Annealings
+
+        min_value = 1e-2 * end_value  # Start value of the annealing
 
         if current_epoch < start_epoch:
-            return min_value  # Vor dem Start bleibt der Wert minimal
-        
-        # Fortschritt berechnen (zwischen 0 und 1)
+            return min_value  # Before the start, the value remains minimal
+
+        # Compute progress (between 0 and 1)
         progress = (current_epoch - start_epoch) / duration
-        progress = np.clip(progress, 0.0, 1.0)  # Begrenzen auf [0, 1]
+        progress = np.clip(progress, 0.0, 1.0)  # Clip to [0, 1]
 
         if self.training_setup.annealing_type == "sigmoid":
-            # Sigmoid-Annealing (sanfter Übergang)
+            # Sigmoid annealing (smooth transition from min_value to end_value)
             sigmoid_progress = 1 / (1 + np.exp(-10 * (progress - 0.5)))
             return min_value + (sigmoid_progress * (end_value - min_value))
 
         elif self.training_setup.annealing_type == "linear":
-            # Lineares Annealing (gleichmäßige Erhöhung von min_value zu end_value)
+            # Linear annealing (uniform increase from min_value to end_value)
             return min_value + (progress * (end_value - min_value))
         
         else:
-            raise ValueError("annealing_type muss 'sigmoid' oder 'linear' sein")
+            raise ValueError("annealing_type must be 'sigmoid' or 'linear'")
 
         
 
     def get_kld_weight(self):
-        # Lade den Validation Loss
+        """
+        Dynamically adjusts the KLD weight based on the validation loss history.
+        If the current validation loss is lower than the minimum in the history,
+        the KLD weight is increased by 10%.
+        """
+        # Load the validation loss
         val_loss = self.trainer.callback_metrics.get('val/loss/recon')
 
-        # Überprüfen, ob val_loss gültig ist (kein None)
+        # Check if val_loss is valid (not None)
         if val_loss is not None:
-            # Konvertiere den Tensor zu einem float (falls erforderlich)
+            # Convert the tensor to a float (if necessary)
             if isinstance(val_loss, torch.Tensor):
                 val_loss = val_loss.item()
 
-            # Entferne alle None-Werte aus der Historie, um min() sicher verwenden zu können
+            # Remove all None values from the history to safely use min()
             valid_losses = [loss for loss in self.val_loss_hist if loss is not None]
 
-            # Wenn es gültige Werte in der Historie gibt, prüfe, ob val_loss kleiner ist
+            # If there are valid values in the history, check if val_loss is smaller
             if valid_losses and min(valid_losses) >= val_loss:
                 self.training_config.kld_weight *= 1.1
 
             self.training_config.kld_weight = min(self.training_config.kld_weight, self.training_config.vae_end_value)
-            # Speichere den aktuellen Loss in der Verlaufs-Historie
+            # Store the current loss in the history
             self.val_loss_hist.append(val_loss)
 
-            # Logge den aktuellen KLD-Gewichtswert
+            # Log the current KLD weight value
             self.log('kld_weight', self.training_config.kld_weight)
 
 
     def configure_optimizers(self):
-        # VAE-Parameter: Encoder und Decoder
+        """
+        Configures the optimizers and learning rate schedulers for the VAE-GMM model.
+        Returns:
+            Tuple[List[Optimizer], List[Dict[str, Any]]]: A tuple containing the optimizers and their respective schedulers.
+        """
+        # VAE parameters: encoder and decoder
         vae_params = list(self.encoder.parameters()) + list(self.decoder.parameters())
-        # Cluster-Parameter (zum Beispiel: pi, mu_c, log_var_c oder weitere Dummy-basierte Parameter)
+        # Cluster parameters (e.g., pi, mu_c, log_var_c, or other dummy-based parameters)
         #cluster_params = [self.pi, self.mu_c, self.log_var_c]
         cluster_params = [self.mu_c, self.pi, self.log_var_c]
 
-        # Optimizer für die beiden Bereiche
+        # Optimizer for the two areas
         opt_vae = torch.optim.Adam(vae_params, lr=self.training_config.vae_lr)
         opt_cluster = torch.optim.AdamW(cluster_params, lr=self.training_config.clustering_lr)
 
-        # Warmup-Konfiguration: In den ersten 25 Epochen soll der Cluster-LR 0 bleiben,
-        # danach lineare Steigerung über 'warmup_epochs' (hier 90 Epochen) bis zur vollen LR.
+        # Warmup configuration: In the first 25 epochs, the cluster LR should remain 0,
+        # then linear increase over 'warmup_epochs' (here 90 epochs) to full LR.
         
         warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
             opt_cluster,
             lr_lambda=lambda epoch: lr_lambda(epoch, warmup_epochs=self.training_setup.clustering_warmup, linear_epochs=self.training_setup.linear_epochs)
         )
 
-        # Danach: Cosine Annealing über die restlichen Epochen
+        # Afterwards: Cosine Annealing over the remaining epochs
         cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             opt_cluster,
-            T_max=self.training_setup.cosine_T_max,  # Passe diesen Wert an deine Trainingsdauer an
+            T_max=self.training_setup.cosine_T_max,  # Adjust this value to your training duration
             eta_min=self.training_setup.cosine_eta_min,
         )
 
-        # Kombiniere die beiden Scheduler: Zuerst Warmup (bis Epoche 25 + warmup_epochs),
-        # danach Cosine Annealing.
+        # Combine the two schedulers: First Warmup (until epoch 25 + warmup_epochs),
+        # then Cosine Annealing.
         cluster_scheduler = torch.optim.lr_scheduler.SequentialLR(
             opt_cluster,
             schedulers=[warmup_scheduler, cosine_scheduler],
             milestones=[self.training_setup.clustering_warmup]
         )
 
-        # VAE-Scheduler (zum Beispiel ein ReduceLROnPlateau)
+        # VAE scheduler (e.g., a ReduceLROnPlateau)
         vae_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             opt_vae, 
             mode="min", 
@@ -952,6 +1083,9 @@ class VAE(pl.LightningModule):
 
 
 if __name__ == "__main__":
+    #### Main Script for Training and Testing the VaDE Model ####
+    # This script initializes the model, data module, and trainer,
+    # and runs either a learning rate finder or a full training session.
     parser = argparse.ArgumentParser(description='Test Script for VaDE.')
     parser.add_argument('--find_lr', type=bool, default=False, help='Flag to find the optimal learning rate.')
     args = parser.parse_args()
@@ -960,7 +1094,7 @@ if __name__ == "__main__":
 
     default_model_config = ModelConfig()
     default_training_config = TrainingConfig()
-    defaul_training_setup = TrainingSetup()
+    default_training_setup = TrainingSetup()
     default_data_config = DataConfig()
     default_hardware_config = HardwareConfig()
 
@@ -970,11 +1104,11 @@ if __name__ == "__main__":
         num_workers = default_data_config.num_workers
     )
 
-    vade = VaDE(
+    vade = VAE(
         default_model_config,
         default_training_config,
-        defaul_training_setup,
-    )
+        default_training_setup,
+    )   
 
     if args.find_lr:
         trainer = pl.Trainer(

@@ -1,7 +1,11 @@
 #ignoring file 
+all_patterns.nc
+all_patterns_neu.nc
+cache_pattern_ref/
+cache_df/
 cluster_mapping.json
+environment.yml
 pca_km.pkl
-
-#ignoring directory
 logs/
+plots/
 __pycache__/

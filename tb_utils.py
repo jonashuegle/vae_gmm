@@ -4,6 +4,7 @@
 
 
 import os
+import string
 import numpy as np
 import matplotlib.pyplot as plt
 from tensorboard.backend.event_processing import event_accumulator
@@ -72,6 +73,33 @@ def plot_training_diagnostics(
     load_fn liefert: steps, vals, epochs = load_fn(logdir, tag, epoch_length, offset=None)
     wobei epochs ein numpy-Array ist, das ab 0 zählt, wenn epoch_length übergeben wurde.
     """
+
+    tag2label = {
+        "val/loss/recon":          "Reconstruction Loss",
+        "val/loss/global_kld":     "Global KLD Loss",
+        "val/loss/cluster_kld":    "Cluster KLD Loss",
+        "val/loss/cat_kld":        "Categorical KLD Loss",
+        "val/loss/var_reg":        "Variance\n Regularization Loss",
+        "annealing/vae_factor":    "VAE KLD Factor",
+        "annealing/gmm_factor":    "GMM KLD Factor",
+        "annealing/cat_factor":    "Categorical\n Regularization Factor",
+        "annealing/reg_factor":    "Variance\n Regularization Factor",
+    }
+
+    tag2color = {
+        "val/loss/recon":          "C0",
+        "val/loss/global_kld":     "C1",
+        "val/loss/cluster_kld":    "C2",
+        "val/loss/cat_kld":        "C3",
+        "val/loss/var_reg":        "C4", 
+        "annealing/vae_factor":    "C1",
+        "annealing/gmm_factor":    "C2",
+        "annealing/cat_factor":    "C3",
+        "annealing/reg_factor":    "C4",
+    }
+
+
+
     # 1) Defaults
     fig_kwargs  = fig_kwargs or {
         "figsize": (14, 10),
@@ -83,6 +111,35 @@ def plot_training_diagnostics(
     fig, (ax_loss, ax_ann, ax_phase) = plt.subplots(
         3, 1, sharex=True, **fig_kwargs
     )
+
+    subplot_labels = [f"({c})" for c in string.ascii_lowercase]
+
+    box_style = {
+        "boxstyle": "round,pad=0.16",
+        "fc": "white",
+        "ec": "white",
+        "lw": 0.8,
+        "alpha": 0.4
+    }
+    ax_loss.text(
+        0.02, 0.95, subplot_labels[0], transform=ax_loss.transAxes,
+        fontsize="large", fontweight='bold', va='top', ha='left',
+        bbox=box_style,
+        zorder=10
+    )
+    ax_ann.text(
+        0.02, 0.95, subplot_labels[1], transform=ax_ann.transAxes,
+        fontsize="large", fontweight='bold', va='top', ha='left',
+        bbox=box_style,
+        zorder=10
+    )
+    ax_phase.text(
+        0.02, 0.95, subplot_labels[2], transform=ax_phase.transAxes,
+        fontsize="large", fontweight='bold', va='top', ha='left',
+        bbox=box_style,
+        zorder=10
+    )
+
     colors     = ["C0","C1","C2","C3","C4"]
     linestyles = ["-","--",":","-.","."]
 
@@ -91,6 +148,8 @@ def plot_training_diagnostics(
     # --- PANEL 1: Validation Losses (log y) ---
     ax_loss.set_yscale("log") 
     for idx, tag in enumerate(loss_tags):
+        color = tag2color.get(tag, f"C{idx}")
+        label = tag2label.get(tag, tag)
         for exp, vers in experiments.items():
             for i, v in enumerate(vers):
                 logdir = os.path.join(base_dir, exp, f"version_{v}")
@@ -110,15 +169,14 @@ def plot_training_diagnostics(
 
                 ax_loss.plot(
                     x[mask], vals[mask],
-                    color=colors[idx],
+                    color=color,
                     linestyle=linestyles[i % len(linestyles)],
-                    label=tag.split("/")[-1]
-                          if (i==0 and exp==list(experiments)[0]) else "",
+                    label=label if (i==0 and exp==list(experiments)[0]) else "",
                     **plot_kwargs
                 )
 
     ax_loss.set_ylabel("Validation Loss (log)")
-    ax_loss.set_title("Validation Losses")
+    #ax_loss.set_title("Validation Losses")
     for _, (s_ep, e_ep) in phase_bounds_ep.items():
         ax_loss.axvline(e_ep, color='gray', linestyle='--', alpha=0.7)
 
@@ -126,6 +184,8 @@ def plot_training_diagnostics(
     # --- PANEL 2: Annealing Weights (log y) ---
     ax_ann.set_yscale("log")
     for idx, tag in enumerate(anneal_tags):
+        color = tag2color.get(tag, f"C{idx}")
+        label = tag2label.get(tag, tag)
         for exp, vers in experiments.items():
             for i, v in enumerate(vers):
                 logdir = os.path.join(base_dir, exp, f"version_{v}")
@@ -141,10 +201,9 @@ def plot_training_diagnostics(
 
                 ax_ann.plot(
                     x, vals,
-                    color=colors[idx],
+                    color=color,
                     linestyle=linestyles[i % len(linestyles)],
-                    label=tag.split("/")[-1]
-                          if (i==0 and exp==list(experiments)[0]) else "",
+                    label=label if (i==0 and exp==list(experiments)[0]) else "",
                     **plot_kwargs
                 )
 
@@ -189,7 +248,22 @@ def plot_training_diagnostics(
 
     # --- Gemeinsame Legende für Loss-Tags ---
     handles, labels = ax_loss.get_legend_handles_labels()
-    ax_loss.legend(handles, labels, ncol=2, fontsize="small", loc ="lower right")
-
-    plt.tight_layout()
+    #ax_loss.legend(handles, labels, ncol=2, fontsize="small", loc ="lower right")
+    ax_loss.legend(
+        handles, labels,
+        loc="center left",
+        bbox_to_anchor=(1.01, 0.5),
+        frameon=False,
+        #fontsize="small",
+        ncol=1
+    )
+    ax_ann.legend(
+        loc="center left",
+        bbox_to_anchor=(1.01, 0.5),
+        frameon=False,
+        #fontsize="small",
+        ncol=1
+    )
+    plt.subplots_adjust(right=0.8)
+   # plt.tight_layout()
     return fig

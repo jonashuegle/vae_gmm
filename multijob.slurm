@@ -8,9 +8,10 @@
 #SBATCH --ntasks=1
 #SBATCH --gpus=1
 #SBATCH --time=08:00:00
-#SBATCH --array=11-30
+#SBATCH --array=71-100
 
 
+module load python3
 eval "$(conda shell.bash hook)"
 conda activate MA
 

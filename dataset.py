@@ -13,7 +13,24 @@ import json
 
 
 class CustomDataset(Dataset):
-    def __init__(self, nc_file_path, drop_pol=True, sqrt=False):
+    """
+    Custom Dataset for loading and processing MSL data from a NetCDF file and NAM data from a CSV file. The dataset normalizes the MSL data and provides a method to retrieve a 60-day period of data.
+
+    Attributes:
+        data (xarray.Dataset): Loaded NetCDF dataset containing MSL data.
+        times (pd.DatetimeIndex): List of all time points from the NetCDF dataset.
+        min_value (float): Minimum value of MSL in the dataset.
+        max_value (float): Maximum value of MSL in the dataset.
+        mean_value (float): Mean value of MSL in the dataset.
+        std_value (float): Standard deviation of MSL in the dataset.
+        sqrt (bool): Whether to apply square root transformation to latitude values.
+    Parameters:
+        nc_file_path (str): Path to the NetCDF file containing MSL data.
+        drop_pol (bool): Whether to drop polar values from the MSL data. Defaults to True.
+        sqrt (bool): Whether to apply square root transformation to latitude values. Defaults to False
+    """
+    def __init__(self, nc_file_path, drop_pol=True, sqrt=False, save_ram=True):
+        # Load MSL data from NetCDF file (handling of no leap date time format because of the missing 29.02.xxxx)
         self.data = xr.open_dataset(nc_file_path)
         cftime_times = self.data['time'].values
         times_iso = [t.isoformat() for t in cftime_times]
@@ -21,20 +38,22 @@ class CustomDataset(Dataset):
         self.data = self.data.assign_coords(time=pd_times)
         self.sqrt = sqrt
 
-        # Pol entfernen und normalisieren wie vorher
+        # Remove polar values
         if drop_pol:
             self.data['MSL'] = self.data['MSL'].where(self.data['lat'] < 88.5, 0)
 
-        self.mean_value = self.data['MSL'].mean(dim='time').values
-        self.std_value = self.data['MSL'].std(dim='time').values
-        print("Anzahl std_value == 0:", np.sum(self.std_value == 0))
-        print("std_value min/max:", np.min(self.std_value), np.max(self.std_value))
+        # Calculate statistics
+        self.mean_value = self.data['MSL'].mean().values
+        self.std_value = self.data['MSL'].std().values
+
+        # Normalize the data
         self.normalize_data()
         if np.isnan(self.data['MSL']).any():
             print("Warnung: NaNs nach Normalisierung!")
 
-        # **HIER: ALLE Zeitschritte in RAM laden**
-        # -> Liste von Torch-Tensors, damit __getitem__ nur noch RAM-Zugriff ist
+        # Prepare the dataset for training
+        # Create a list of all spatial data and corresponding times 
+        # Save data in RAM to avoid bottlenecks during training
         self.all_spatial_data = []
         self.all_times = []
         for i in range(len(self.data['time'])):
@@ -43,10 +62,18 @@ class CustomDataset(Dataset):
             self.all_spatial_data.append(arr)
             self.all_times.append(str(self.data.time.values[i]))
 
-        # Optional: Löse xarray wieder auf, um RAM zu sparen
-        del self.data
+        # Optional: Remove xarray data to save RAM
+        if save_ram:
+            self.data.close()
+            del self.data
+            self.data = None
 
     def normalize_data(self):
+        """
+        Normalizes the MSL data by subtracting the mean and dividing by the standard deviation. Then, it applies a cosine transformation based on latitude values.
+        If the square root transformation is enabled, it applies the square root of the absolute cosine of the latitude.
+        If the latitude is greater than or equal to 88.5, it sets the value to 1.
+        """
         self.std_value[self.std_value == 0] = 1.0
         self.data['MSL'] = (self.data['MSL'] - self.mean_value) / self.std_value
         lat = self.data['lat'].values
@@ -58,9 +85,19 @@ class CustomDataset(Dataset):
         self.data['MSL'] *= lat_cos[:, None]
 
     def __len__(self):
+        """
+        Returns the total number of spatial data points in the dataset.
+        """
         return len(self.all_spatial_data)
 
     def __getitem__(self, idx):
+        """
+        Retrieves the spatial data and corresponding time for a given index.
+        Parameters:
+            idx (int): Index of the data point to retrieve.
+        Returns:
+            tuple: A tuple containing the spatial data and the corresponding time as a string.
+        """
         return self.all_spatial_data[idx], self.all_times[idx]
 
 
@@ -68,7 +105,17 @@ class CustomDataset(Dataset):
 
 
 class DataModule(pl.LightningDataModule):
-    
+    """
+    Pytorch Lightning DataModule for loading and processing the CustomDataset. It handles the preparation of training, validation, and test datasets, and provides data loaders for each.
+    Attributes:
+        data_dir (str): Directory containing the dataset files.
+        batch_size (int): Batch size for the data loaders.
+        num_workers (int): Number of worker threads for data loading.
+    Parameters:
+        data_dir (str): Directory containing the dataset files.
+        batch_size (int): Batch size for the data loaders.
+        num_workers (int): Number of worker threads for data loading.
+    """
     def __init__(self, data_dir, batch_size, num_workers):
         super(DataModule, self).__init__()
         self.data_dir = data_dir
@@ -79,9 +126,13 @@ class DataModule(pl.LightningDataModule):
     def prepare_data(self, drop_pol = True):
         pass
 
-    def setup(self, stage = None):
+    def setup(self):  
+        """
+        Sets up the dataset for training, validation, and testing. It loads the full dataset and splits it into training and validation sets.
+        """
                 
-        self.full_dataset = CustomDataset(self.data_dir)
+        self.full_dataset = CustomDataset(self.data_dir
+                                          , drop_pol=True, sqrt=False, save_ram=True)
         train_size = int(0.8 * len(self.full_dataset))
         val_size = len(self.full_dataset) - train_size
 
@@ -90,14 +141,30 @@ class DataModule(pl.LightningDataModule):
         )
 
     def train_dataloader(self):
+        """
+        Returns a DataLoader for the training dataset.
+        This DataLoader shuffles the data and uses the specified batch size and number of workers.
+        """
         return DataLoader(self.train_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
     
     def val_dataloader(self):
+        """
+        Returns a DataLoader for the validation dataset.
+        This DataLoader does not shuffle the data and uses the specified batch size and number of workers.
+        """
         return DataLoader(self.val_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
     
     def test_dataloader(self):
+        """
+        Returns a DataLoader for the test dataset.
+        This DataLoader does not shuffle the data and uses the specified batch size and number of workers.
+        """
         return DataLoader(self.test_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
     
     def all_data_dataloader(self):
+        """
+        Returns a DataLoader for the full dataset.
+        This DataLoader does not shuffle the data and uses the specified batch size and number of workers.
+        """
         return DataLoader(self.full_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
     

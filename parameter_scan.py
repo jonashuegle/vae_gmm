@@ -5,6 +5,7 @@ import torch
 import numpy as np
 import os
 import json
+import random
 import hashlib
 import argparse
 from datetime import datetime
@@ -53,6 +54,7 @@ def train_vae(config, checkpoint_dir=None):
             davies_bouldin=metrics["davies_bouldin"],
             cluster_entropy=metrics["cluster_entropy"],
             smoothness=metrics["smoothness"],
+            balance=metrics["balance"],
         )
         return metrics
     
@@ -66,7 +68,7 @@ def train_vae(config, checkpoint_dir=None):
         clustering_lr=config["clustering_lr"],
         vae_lr=config["vae_lr"],
         recon_weight=config["recon_weight"],
-        kld_weight=config["kld_weight"],
+        vae_end_value=config["vae_end_value"],
         gmm_end_value=config["gmm_end_value"],
         reg_end_value=config["reg_end_value"],
         cat_end_value=config["cat_end_value"],
@@ -74,12 +76,15 @@ def train_vae(config, checkpoint_dir=None):
         log_img=False,  # Kein Logging von Bildern für schnellere Ausführung
     )
     training_setup = TrainingSetup(
-        gmm_epochs=config["gmm_epochs"],
-        warmup_epochs=config["warmup_epochs"],
-        adapt_epochs=config["adapt_epochs"],
-        vae_lr_factor=config["vae_lr_factor"],
-        vae_lr_patience=config["vae_lr_patience"],
+        gmm_epochs        = config["gmm_epochs"],
+        warmup_epochs     = config["vae_epochs"],
+        vae_epochs        = config["vae_epochs"],
+        kmeans_init_epoch = config["vae_epochs"],
+        clustering_warmup = config["vae_epochs"],
+        vae_lr_factor     = config["vae_lr_factor"],
+        vae_lr_patience   = config["vae_lr_patience"],
     )
+
     
     data_config = DataConfig()
     num_epochs = 300
@@ -138,19 +143,21 @@ def train_vae(config, checkpoint_dir=None):
             "davies_bouldin": trainer.callback_metrics["val/metric/davies_bouldin_index"].item(),
             "cluster_entropy": trainer.callback_metrics["val/metric/cluster_entropy"].item(),
             "smoothness": trainer.callback_metrics.get("val/metric/smoothness", torch.tensor(-1e3)).item(),
+            "balance": trainer.callback_metrics.get("val/metric/balance", torch.tensor(-1e4)).item(),
         }
     except Exception:
         # Fallback-Metriken…
         metrics = {k: (v.item() if isinstance(v, torch.Tensor) else v)
                    for k, v in {
-                       "loss_recon": 1e3,
-                       "silhouette": -1e3,
-                       "calinski_harabasz": -1e3,
-                       "davies_bouldin": 1e3,
-                       "cluster_entropy": -1e3,
-                       "smoothness": -1e3,
+                        "loss_recon": 1e3,
+                        "silhouette": -1e3,
+                        "calinski_harabasz": -1e3,
+                        "davies_bouldin": 1e3,
+                        "cluster_entropy": -1e3,
+                        "smoothness": -1e3,
+                        "balance": -1e4,
                    }.items()}
-    
+
     # Kombiniere config + metrics in ein einziges JSON
     result = {
         "trial_id": trial_id,
@@ -160,14 +167,18 @@ def train_vae(config, checkpoint_dir=None):
     with open(result_file, 'w') as f:
         json.dump(result, f, indent=2)
 
-    tune.report(
-        silhouette=metrics["silhouette"],
-        loss_recon=metrics["loss_recon"],
-        calinski_harabasz=metrics["calinski_harabasz"],
-        davies_bouldin=metrics["davies_bouldin"],
-        cluster_entropy=metrics["cluster_entropy"],
-        smoothness=metrics["smoothness"],
-    )
+    # tune.report(
+    #     silhouette=metrics["silhouette"],
+    #     loss_recon=metrics["loss_recon"],
+    #     calinski_harabasz=metrics["calinski_harabasz"],
+    #     davies_bouldin=metrics["davies_bouldin"],
+    #     cluster_entropy=metrics["cluster_entropy"],
+    #     smoothness=metrics["smoothness"],
+    #     balance=metrics["balance"],
+    # )
+
+    tune.report(**metrics)
+
 
     return metrics
 
@@ -178,6 +189,10 @@ if __name__ == "__main__":
     parser.add_argument("--version", type=int, default=int(os.environ.get("VAE_EXPERIMENT_VERSION", 1)))
     parser.add_argument("--gpus", type=int, default=0, help="Anzahl zu verwendender GPUs (0=auto)")
     args = parser.parse_args()
+
+    torch.manual_seed(42)
+    np.random.seed(42)
+    random.seed(42)
     
     # Experiment-Setup
     EXPERIMENT_VERSION = args.version
@@ -244,29 +259,28 @@ if __name__ == "__main__":
 
         # Epochen für Phasen
         "gmm_epochs": tune.choice([50, 80, 100, 150]),
-        "warmup_epochs": tune.choice([15, 20, 25, 30]),
-        "adapt_epochs": tune.choice([10, 15, 20]),
+        "vae_epochs": tune.choice([25, 30, 40, 50]),  # VAE-Training
         # ... weitere falls du magst!
     }
+   
 
     points_to_evaluate = [
         {
-            "latent_dim": 14, 
-            "vae_lr": 0.000193066,
-            "clustering_lr": 5.929e-06,
-            "recon_weight": 0.1,
-            "vae_end_value": 0.001,
-            "gmm_end_value": 0.005220209,
-            "reg_end_value": 0.04072058,
-            "cat_end_value": 0.005362321,
-            "vae_lr_factor": 0.777187766,
-            "vae_lr_patience": 30,
-            "gmm_epochs": 80,
-            "warmup_epochs": 25,
-            "adapt_epochs": 15,
-            # usw., je nach Parameter die du explizit vergleichen willst
+            "latent_dim":        14, 
+            "vae_lr":            0.000193066,
+            "clustering_lr":     5.929e-06,
+            "recon_weight":      0.1,
+            "vae_end_value":     0.001,
+            "gmm_end_value":     0.005220209,
+            "reg_end_value":     0.04072058,
+            "cat_end_value":     0.005362321,
+            "vae_lr_factor":     0.777187766,
+            "vae_lr_patience":   30,
+            "gmm_epochs":        80,
+            "vae_epochs":        25,
         }
     ]
+
 
     
     # Scheduler
@@ -286,14 +300,14 @@ if __name__ == "__main__":
         ],
         metric_columns=[
             "loss_recon", "silhouette", "calinski_harabasz",
-            "davies_bouldin", "cluster_entropy", "smoothness", "training_iteration"
+            "davies_bouldin", "cluster_entropy", "smoothness", "balance", "training_iteration"
         ],
         max_report_frequency=60,  # Alle 60 Sekunden berichten
     )
     
     # Suchkonfiguration
     search_alg = OptunaSearch(
-        metric=["silhouette", "loss_recon", "smoothness"],
+        metric=["silhouette", "loss_recon", "balance"],
         mode=["max", "min", "max"],
         points_to_evaluate=points_to_evaluate,
     )
