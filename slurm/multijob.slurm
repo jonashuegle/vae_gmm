@@ -19,6 +19,6 @@ echo "#### Starting run $SLURM_ARRAY_TASK_ID####"
 
 cd "$SLURM_SUBMIT_DIR/.."
 
-python3 -m src.training.py \
+python3 -m src.training \
     --version $SLURM_ARRAY_TASK_ID \
     "$@"
