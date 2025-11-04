@@ -7,6 +7,7 @@ cache_df/
 cluster_mapping.json
 environment.yml
 pca_km.pkl
+slurm/
 logs/
 plots/
 __pycache__/
