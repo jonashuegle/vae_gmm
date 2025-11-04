@@ -100,7 +100,7 @@ python3 -m src.training "$@"
 
 Submit it like this:
 
-sbatch --export=./data/slp.nc,LOG_DIR=./log slurm/training.slurm --max_epochs 1 --seed 42
+sbatch --export=ALL,DATA_PATH=/work/aa0238/a271125/data/slp.N_djfm_6h_aac_detrend_1deg_north_atlantic.nc,LOG_DIR=/work/aa0238/a271125/logs/vae_training slurm/training.slurm --max_epochs 1 --seed 42
 
 - everything after `slurm/training.slurm` is forwarded to `python -m src.training …`
 - everything in `--export=...` becomes an environment variable and is picked up by your `DataConfig`
@@ -115,6 +115,10 @@ SLURM with auto versioning (according to your script):
 
 sbatch slurm/parameter_scan.slurm
 sbatch slurm/parameter_scan.slurm 7   # explicit version
+
+Check progress:
+
+python -m src.check_ray_progress --dir /work/aa0238/a271125/logs_ray/vae_gmm_multi_objective_scan/version_5
 
 ## Configure `config.py`
 
@@ -171,10 +175,10 @@ import torch
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 CL = ClusteringLoader(
-    log_dir='./log',
+    log_dir='/work/aa0238/a271125/logs/Correct_Normalization',
     experiment='Experiment_',
     version='0',
-    nc_path='./data/slp.nc',
+    nc_path='/home/a/a271125/work/data/slp.N_djfm_6h_aac_detrend_1deg_north_atlantic.nc',
     device=device,
     pca_kmeans_path='pca_km.pkl',
     mapping_path='cluster_mapping.json'

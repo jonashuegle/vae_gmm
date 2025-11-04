@@ -1,5 +1,6 @@
 #ignoring file 
 all_patterns.nc
+README.md
 all_patterns_neu.nc
 cache_pattern_ref/
 cache_df/
