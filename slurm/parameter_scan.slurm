@@ -2,7 +2,7 @@
 #SBATCH --account= ...
 #SBATCH --job-name=multi_scan
 #SBATCH --output=./logs_slurm/scan_%A_%a.out
-#SBATCH --error=./logs_slurm/scan_%A_%a.err
+#SBATCH --error=./logs_slurm/_%A_%a.err
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1

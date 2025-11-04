@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --account= ...
+#SBATCH --account=aa0238_gpu
 #SBATCH --job-name=multi_scan
-#SBATCH --output=./logs_slurm/train_%A_%a.out
-#SBATCH --error=./logs_slurm/train_%A_%a.err
+#SBATCH --output=/home/a/a271125/VAE-GMM/logs/train_%A_%a.out
+#SBATCH --error=/home/a/a271125/VAE-GMM/logs/train_%A_%a.err
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -19,6 +19,6 @@ echo "#### Starting run $SLURM_ARRAY_TASK_ID####"
 
 cd "$SLURM_SUBMIT_DIR/.."
 
-python3 -m src.training \
+python3 -m src.training.py \
     --version $SLURM_ARRAY_TASK_ID \
     "$@"
