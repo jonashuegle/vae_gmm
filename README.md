@@ -16,7 +16,7 @@ This project expects data and log paths via environment variables.
 
 Set them **before** running:
 
-export DATA_PATH=/home/a/a271125/work/data/slp.N_djfm_6h_aac_detrend_1deg_north_atlantic.nc
+export DATA_PATH=./data/slp.nc
 export LOG_DIR=./logs
 
 - DATA_PATH → path to the NetCDF file used for training
@@ -43,7 +43,7 @@ python -m src.training ...
 
 1. Set your paths:
 
-export DATA_PATH=/home/a/a271125/work/data/slp.N_djfm_6h_aac_detrend_1deg_north_atlantic.nc
+export DATA_PATH=./data/slp.nc
 export LOG_DIR=./logs
 
 2. Activate env:
@@ -71,36 +71,9 @@ where `<experiment_name>` comes from `DataConfig.experiment` in `config.py`.
 
 ## Training via SLURM
 
-Example job script (save e.g. as `slurm/training.slurm`):
-
-#!/bin/bash
-#SBATCH --account=aa0238_gpu
-#SBATCH --job-name=training
-#SBATCH --output=/home/a/a271125/VAE-GMM/logs/training_%j.log
-#SBATCH --error=/home/a/a271125/VAE-GMM/logs/training_%j.err
-#SBATCH --partition=gpu
-#SBATCH --gpus=1
-#SBATCH --time=04:00:00
-#SBATCH --nodes=1
-
-eval "$(conda shell.bash hook)"
-conda activate MA
-
-# go to project root (script lives in slurm/)
-cd "$SLURM_SUBMIT_DIR/.."
-
-# make project importable (for src.*)
-export PYTHONPATH="$(pwd):$PYTHONPATH"
-
-# require that DATA_PATH and LOG_DIR are provided
-: "${DATA_PATH:?DATA_PATH not set}"
-: "${LOG_DIR:?LOG_DIR not set}"
-
-python3 -m src.training "$@"
-
 Submit it like this:
 
-sbatch --export=ALL,DATA_PATH=/work/aa0238/a271125/data/slp.N_djfm_6h_aac_detrend_1deg_north_atlantic.nc,LOG_DIR=/work/aa0238/a271125/logs/vae_training slurm/training.slurm --max_epochs 1 --seed 42
+sbatch --export=ALL,DATA_PATH=./data/slp.nc,LOG_DIR=./logs slurm/training.slurm --max_epochs 1 --seed 42
 
 - everything after `slurm/training.slurm` is forwarded to `python -m src.training …`
 - everything in `--export=...` becomes an environment variable and is picked up by your `DataConfig`
@@ -115,10 +88,6 @@ SLURM with auto versioning (according to your script):
 
 sbatch slurm/parameter_scan.slurm
 sbatch slurm/parameter_scan.slurm 7   # explicit version
-
-Check progress:
-
-python -m src.check_ray_progress --dir /work/aa0238/a271125/logs_ray/vae_gmm_multi_objective_scan/version_5
 
 ## Configure `config.py`
 
@@ -175,10 +144,10 @@ import torch
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 CL = ClusteringLoader(
-    log_dir='/work/aa0238/a271125/logs/Correct_Normalization',
+    log_dir='./logs',
     experiment='Experiment_',
     version='0',
-    nc_path='/home/a/a271125/work/data/slp.N_djfm_6h_aac_detrend_1deg_north_atlantic.nc',
+    nc_path='./data/slp.nc',
     device=device,
     pca_kmeans_path='pca_km.pkl',
     mapping_path='cluster_mapping.json'
