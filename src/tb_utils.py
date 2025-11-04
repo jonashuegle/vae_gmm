@@ -1,8 +1,4 @@
 # tb.utils.py
-# 
-# Diese Datei enthält Hilfsfunktionen zum Laden und Plotten von TensorBoard-Skalaren.
-
-
 import os
 import string
 import numpy as np

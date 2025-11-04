@@ -41,8 +41,10 @@ conda activate MA
 
 echo "#### Starting run SLURM_ARRAY_TASK_ID=${SLURM_ARRAY_TASK_ID} (GMM=${GMM}, SEED=${SEED}, VERSION=${VERSION}) ####"
 
+cd "$SLURM_SUBMIT_DIR/.."
+
 ### Training aufrufen ###
-python3 training.py \
+python3 -m src.training.py \
     --version "${VERSION}" \
     --gmm_end_value "${GMM}" \
     --seed "${SEED}"

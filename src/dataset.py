@@ -8,9 +8,6 @@ import pandas as pd
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 
-import os
-import json
-
 
 class CustomDataset(Dataset):
     """
@@ -107,10 +104,12 @@ class CustomDataset(Dataset):
 class DataModule(pl.LightningDataModule):
     """
     Pytorch Lightning DataModule for loading and processing the CustomDataset. It handles the preparation of training, validation, and test datasets, and provides data loaders for each.
+
     Attributes:
         data_dir (str): Directory containing the dataset files.
         batch_size (int): Batch size for the data loaders.
         num_workers (int): Number of worker threads for data loading.
+        shuffle_train (bool): Flag to control shuffling of the training dataloader (used by callbacks).
     Parameters:
         data_dir (str): Directory containing the dataset files.
         batch_size (int): Batch size for the data loaders.
@@ -121,50 +120,99 @@ class DataModule(pl.LightningDataModule):
         self.data_dir = data_dir
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.data = None
-    
-    def prepare_data(self, drop_pol = True):
+
+        # will be toggled by SwitchShuffleCallback
+        self.shuffle_train = True
+
+        # placeholders
+        self.full_dataset = None
+        self.train_dataset = None
+        self.val_dataset = None
+        self.test_dataset = None
+
+    def prepare_data(self, drop_pol=True):
+        """
+        Optional data preparation step (e.g. download). Not used here.
+        """
         pass
 
-    def setup(self):  
+    def setup(self, stage=None):
         """
-        Sets up the dataset for training, validation, and testing. It loads the full dataset and splits it into training and validation sets.
-        """
-                
-        self.full_dataset = CustomDataset(self.data_dir
-                                          , drop_pol=True, sqrt=False, save_ram=True)
-        train_size = int(0.8 * len(self.full_dataset))
-        val_size = len(self.full_dataset) - train_size
+        Sets up the dataset for training, validation, and testing.
+        Lightning calls this with an optional 'stage' argument.
 
-        self.train_dataset, self.val_dataset = random_split(
-            self.full_dataset, [train_size, val_size], generator=torch.Generator()
-        )
+        Args:
+            stage (str, optional): One of "fit", "validate", "test" or None.
+        """
+        # load the full dataset only once
+        if self.full_dataset is None:
+            self.full_dataset = CustomDataset(
+                self.data_dir,
+                drop_pol=True,
+                sqrt=False,
+                save_ram=True
+            )
+
+        # create train/val split for fitting
+        if stage == "fit" or stage is None:
+            train_size = int(0.8 * len(self.full_dataset))
+            val_size = len(self.full_dataset) - train_size
+
+            self.train_dataset, self.val_dataset = random_split(
+                self.full_dataset,
+                [train_size, val_size],
+                generator=torch.Generator().manual_seed(42)
+            )
+
+        # make sure we have something for test_dataloader
+        if stage == "test" or stage is None:
+            if self.test_dataset is None:
+                self.test_dataset = self.full_dataset
 
     def train_dataloader(self):
         """
         Returns a DataLoader for the training dataset.
-        This DataLoader shuffles the data and uses the specified batch size and number of workers.
+        This DataLoader can be configured to shuffle via self.shuffle_train.
         """
-        return DataLoader(self.train_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
-    
+        return DataLoader(
+            self.train_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=self.shuffle_train
+        )
+
     def val_dataloader(self):
         """
         Returns a DataLoader for the validation dataset.
-        This DataLoader does not shuffle the data and uses the specified batch size and number of workers.
+        This DataLoader does not shuffle the data.
         """
-        return DataLoader(self.val_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
-    
+        return DataLoader(
+            self.val_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=False
+        )
+
     def test_dataloader(self):
         """
         Returns a DataLoader for the test dataset.
-        This DataLoader does not shuffle the data and uses the specified batch size and number of workers.
+        This DataLoader does not shuffle the data.
         """
-        return DataLoader(self.test_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
-    
+        return DataLoader(
+            self.test_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=False
+        )
+
     def all_data_dataloader(self):
         """
         Returns a DataLoader for the full dataset.
-        This DataLoader does not shuffle the data and uses the specified batch size and number of workers.
+        This DataLoader does not shuffle the data.
         """
-        return DataLoader(self.full_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
-    
+        return DataLoader(
+            self.full_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=False
+        )

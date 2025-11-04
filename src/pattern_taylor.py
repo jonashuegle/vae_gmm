@@ -1,37 +1,21 @@
 # pattern_taylor.py
-# ---------------------------------------------------------------------
-# (c) 2025 – Taylor‑Diagram‑/Pattern‑Utility
-#
-# ▸ erstellt Referenz‑Pattern via flächen‑gewichteter PCA+KMeans
-# ▸ speichert sie als   <cache>/<filename>_ref.nc  (Pattern)
-#                       <cache>/<filename>_labels.npy  (Zeitlabels)
-#                       <cache>/<filename>_meta.json  (Parameter)
-# ▸ matcht neue Pattern (max. Korrelation, Hungarian) auf die Referenz
-# ▸ zeichnet einen Taylor‑Plot (area‑weighted)
-# ---------------------------------------------------------------------
-
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 import numpy as np
 import xarray as xr
 from scipy.optimize import linear_sum_assignment
-
 import matplotlib.pyplot as plt
 from matplotlib.projections import PolarAxes
 from mpl_toolkits.axisartist import floating_axes, grid_finder
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import matplotlib.patches as mpatches
-
-
 from matplotlib.gridspec import GridSpec
 from matplotlib.lines import Line2D
-
-
-from plotting import Plotting
-from pattern_reference_manager import PatternReferenceManager
-
 import numpy as np
+
+from src.pattern_reference_manager import PatternReferenceManager
+from src.plotting import Plotting
 
 def curved_text(ax, text, radius, center=(0,0), start_angle=-160, end_angle=160, **kwargs):
     # Text wird als Einzelbuchstaben platziert

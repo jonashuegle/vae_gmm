@@ -17,6 +17,8 @@ conda activate MA
 
 echo "#### Starting run $SLURM_ARRAY_TASK_ID####"
 
-python3 training.py \
+cd "$SLURM_SUBMIT_DIR/.."
+
+python3 -m src.training.py \
     --version $SLURM_ARRAY_TASK_ID \
     "$@"

@@ -2,6 +2,7 @@ import os
 import json
 import pickle
 import numpy as np
+from typing import Optional
 import torch
 from torch.utils.data import DataLoader
 import pandas as pd
@@ -11,12 +12,12 @@ import xarray as xr
 import matplotlib.pyplot as plt
 from scipy.optimize import linear_sum_assignment
 
-from dataset import CustomDataset
-from VAE_GMM import VAE
-from plotting import Plotting
-from visualize_tsne import visualize_tsne_matplotlib
+from src.dataset import CustomDataset
+from src.VAE_GMM import VAE
+from src.plotting import Plotting
+from src.visualize_tsne import visualize_tsne_matplotlib
 
-from typing import Optional
+
 
 class ClusteringLoader:
     def __init__(

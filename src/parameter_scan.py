@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-
-import pytorch_lightning as pl
 import torch
 import numpy as np
 import os
@@ -10,17 +8,25 @@ import hashlib
 import argparse
 from datetime import datetime
 
+
+import pytorch_lightning as pl
+from pytorch_lightning.loggers import TensorBoardLogger
 import ray
 from ray import tune
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.search.optuna import OptunaSearch
 
-from dataset import DataModule
-from config import ModelConfig, TrainingConfig, TrainingSetup, DataConfig
-from VAE_GMM import VAE
-from pytorch_lightning.loggers import TensorBoardLogger
+from config import (
+    ModelConfig,
+    TrainingConfig,
+    TrainingSetup,
+    HardwareConfig,
+    DataConfig,
+)
 
-# Einfacher Callback ohne komplexe Integration
+from src.dataset import DataModule
+from src.VAE_GMM import VAE
+
 class SimpleCallback(pl.Callback):
     def on_train_epoch_end(self, trainer, pl_module):
         print(f"Epoche {trainer.current_epoch}/{trainer.max_epochs} abgeschlossen")

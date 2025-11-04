@@ -1,7 +1,16 @@
 from dataclasses import dataclass
 from typing import Tuple, Dict, Any, Optional
 import torch.nn as nn
+from pathlib import Path
+import os
 
+
+
+BASE_DIR = Path(__file__).resolve().parent
+
+
+DEFAULT_DATA_DIR = BASE_DIR / "data"
+DEFAULT_LOG_DIR = BASE_DIR / "logs"
 
 @dataclass
 class ModelConfig:
@@ -113,11 +122,10 @@ class DataConfig:
         experiment (str): Name of the experiment for logging.
         num_workers (int): Number of workers for data loading.
     """
-    data_dir: str = '/home/a/a271125/work/data/slp.N_djfm_6h_aac_detrend_1deg_north_atlantic.nc'
-    log_dir: str = '/work/aa0238/a271125/logs/Correct_Normalization'
-    experiment: str = 'Experiment_'
-    num_workers: int = 64
-
+    data_dir: str = os.getenv("DATA_PATH", str(DEFAULT_DATA_DIR / "slp.*.nc"))
+    log_dir: str = os.getenv("LOG_DIR", str(DEFAULT_LOG_DIR))
+    experiment: str = os.getenv("EXPERIMENT_NAME", "Experiment_")
+    num_workers: int = int(os.getenv("NUM_WORKERS", "4"))
 
 @dataclass
 class HardwareConfig:

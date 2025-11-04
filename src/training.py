@@ -5,25 +5,30 @@ import torch.nn.functional as F
 import os
 import glob
 import numpy as np
+import random
+import argparse
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
 from typing import List, Tuple, Dict
 from abc import ABC, abstractmethod
 
-import argparse
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
-from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.loggers import TensorBoardLogger
 from torch.utils.tensorboard import SummaryWriter
-
-from dataset import DataModule
-from VAE_GMM import VAE
-from config import ModelConfig, TrainingConfig, TrainingSetup, DataConfig, HardwareConfig
-
-import os
 from pytorch_lightning.callbacks import ModelCheckpoint, Callback
-import random
+
+from src.dataset import DataModule
+from src.VAE_GMM import VAE
+from config import (
+    ModelConfig,
+    TrainingConfig,
+    TrainingSetup,
+    DataConfig,
+    HardwareConfig,
+)
+
+
 
 
 class SwitchShuffleCallback(pl.Callback):
@@ -108,7 +113,7 @@ if __name__ == '__main__':
     
     #### Initialize configurations ####
     model_config = ModelConfig()
-    training_config = TrainingConfig()
+    training_config = TrainingConfig(seed=seed)
     training_setup = TrainingSetup()
     data_config = DataConfig()
     hardware_config = HardwareConfig()
@@ -166,9 +171,6 @@ if __name__ == '__main__':
     # Callback to switch the shuffle state of the training dataloader at the kmeans initialization epoch
     # (impact has to be further investigated)
     switch_callback = SwitchShuffleCallback(switch_epoch=training_setup.kmeans_init_epoch, new_shuffle_value=False)
-    
-    if training_config.seed is None:
-        raise ValueError("Seed must be set in the training configuration.")
 
     #### Initialize Trainer ####
     trainer = pl.Trainer(

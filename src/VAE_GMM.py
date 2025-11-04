@@ -1,28 +1,48 @@
+# src/VAE_GMM.py
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 
 from torch.optim.lr_scheduler import SequentialLR, ConstantLR, CosineAnnealingLR
-
 from lightning.pytorch.tuner import Tuner
 
 from matplotlib import pyplot as plt
 import seaborn as sns
 
-from sklearn.metrics import silhouette_score, silhouette_samples, davies_bouldin_score, calinski_harabasz_score
-
+from sklearn.metrics import (
+    silhouette_score,
+    silhouette_samples,
+    davies_bouldin_score,
+    calinski_harabasz_score,
+)
 from sklearn.manifold import TSNE
 from sklearn.cluster import KMeans
 
 import argparse
-
 import numpy as np
-import os
-from dataset import DataModule
-import config as config
-from config import ModelConfig, TrainingConfig, TrainingSetup, HardwareConfig, DataConfig
+
+from src.dataset import DataModule
+from config import (
+    ModelConfig,
+    TrainingConfig,
+    TrainingSetup,
+    HardwareConfig,
+    DataConfig,
+)
 from typing import List, Tuple, Dict, Any, Optional
+
 
 
 def lr_lambda(epoch, warmup_epochs = 35, linear_epochs=65):
