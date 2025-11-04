@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --account=aa0238_gpu
-#SBATCH --job-name=final_multi_objective_scan
-#SBATCH --output=/home/a/a271125/VAE-GMM/logs/final_scan%j.out
-#SBATCH --error=/home/a/a271125/VAE-GMM/logs/final_scan%j.err
+#SBATCH --account= ...
+#SBATCH --job-name=multi_scan
+#SBATCH --output=./logs_slurm/scan_%A_%a.out
+#SBATCH --error=./logs_slurm/scan_%A_%a.err
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1

@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --account=aa0238_gpu
+#SBATCH --account= ...
 #SBATCH --job-name=multi_scan
-#SBATCH --output=/home/a/a271125/VAE-GMM/logs/train_%A_%a.out
-#SBATCH --error=/home/a/a271125/VAE-GMM/logs/train_%A_%a.err
+#SBATCH --output=./logs_slurm/train_%A_%a.out
+#SBATCH --error=./logs_slurm/train_%A_%a.err
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
