@@ -17,16 +17,16 @@ def load_tensorboard_scalars(
     offset: int = None,
 ):
     """
-    Lädt TensorBoard-Skalare und rechnet optional global steps → epochen um.
-    
-    :param logdir: Pfad zu den TensorBoard-Logs.
-    :param scalar_name: Name des Skalaren, z.B. 'val/loss/recon'.
-    :param epoch_length: Anzahl Schritte pro Epoche. Wenn None, wird kein epoch array erzeugt.
-    :param offset: Erster geloggter Step, der als Epoche 0 interpretiert wird. 
-                   Wenn None, wird offset = min(steps).
-    :return: steps (np.array), values (np.array), epochs (np.array oder None)
+    Load TensorBoard scalars, optionally converting global steps into epochs.
+
+    :param logdir: path to the TensorBoard logs.
+    :param scalar_name: name of the scalar, e.g. 'val/loss/recon'.
+    :param epoch_length: steps per epoch. If None, no epoch array is produced.
+    :param offset: first logged step, treated as epoch 0.
+                   If None, offset = min(steps).
+    :return: steps (np.array), values (np.array), epochs (np.array or None)
     """
-    # TensorBoard laden
+    # load the event files
     ea = EventAccumulator(logdir, size_guidance={'scalars': 0})
     ea.Reload()
 
@@ -38,11 +38,11 @@ def load_tensorboard_scalars(
     steps  = np.array([e.step  for e in events], dtype=int)
     vals   = np.array([e.value for e in events], dtype=float)
 
-    # Offset bestimmen, falls nicht übergeben
+    # derive the offset when it is not given
     if epoch_length is not None:
         if offset is None:
             offset = steps.min()
-        # Epoche = (step – offset) / epoch_length
+        # epoch = (step - offset) / epoch_length
         epochs = (steps - offset) / epoch_length
     else:
         epochs = None
@@ -63,11 +63,11 @@ def plot_training_diagnostics(
     plot_kwargs: dict = None,
 ) -> plt.Figure:
     """
-    Plots validation losses (log y), annealing weights (log y)
-    und eine Phase-Timeline in Epochen (oder in Steps, falls epoch_length=None).
-    
-    load_fn liefert: steps, vals, epochs = load_fn(logdir, tag, epoch_length, offset=None)
-    wobei epochs ein numpy-Array ist, das ab 0 zählt, wenn epoch_length übergeben wurde.
+    Plots validation losses (log y), annealing weights (log y) and a phase
+    timeline in epochs (or in steps when epoch_length is None).
+
+    load_fn returns: steps, vals, epochs = load_fn(logdir, tag, epoch_length, offset=None)
+    where epochs is a numpy array counting from 0 when epoch_length was given.
     """
 
     tag2label = {
@@ -87,7 +87,7 @@ def plot_training_diagnostics(
         "val/loss/global_kld":     "C1",
         "val/loss/cluster_kld":    "C2",
         "val/loss/cat_kld":        "C3",
-        "val/loss/var_reg":        "C4", 
+        "val/loss/var_reg":        "C4",
         "annealing/vae_factor":    "C1",
         "annealing/gmm_factor":    "C2",
         "annealing/cat_factor":    "C3",
@@ -142,7 +142,7 @@ def plot_training_diagnostics(
     max_x = 0.0
 
     # --- PANEL 1: Validation Losses (log y) ---
-    ax_loss.set_yscale("log") 
+    ax_loss.set_yscale("log")
     for idx, tag in enumerate(loss_tags):
         color = tag2color.get(tag, f"C{idx}")
         label = tag2label.get(tag, tag)
@@ -227,7 +227,7 @@ def plot_training_diagnostics(
         )
 
 
-    # --- Gemeinsame X-Limits & Ticks ---
+    # shared x limits and ticks
     for ax in (ax_loss, ax_ann, ax_phase):
         ax.set_xlim(0, max_x)
 
@@ -242,7 +242,7 @@ def plot_training_diagnostics(
         ax.set_xticks(ticks)
         ax.set_xticklabels(tick_lbls)
 
-    # --- Gemeinsame Legende für Loss-Tags ---
+    # shared legend for the loss tags
     handles, labels = ax_loss.get_legend_handles_labels()
     #ax_loss.legend(handles, labels, ncol=2, fontsize="small", loc ="lower right")
     ax_loss.legend(

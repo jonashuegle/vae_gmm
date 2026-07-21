@@ -65,40 +65,40 @@ class Plotting:
             return '0°'
         if meridian > 0:
             return str(int(meridian))+'°'
-        
+
 
     def create_custom_cmap(self, max_scale, base_colors, adjustment_factors=None):
         """
-        Erstellt eine angepasste Colormap mit einstellbarer Sättigung für jede Farbe.
+        Build a colormap with adjustable saturation per colour.
 
-        :param max_scale: Skalierungsfaktor für die Positionsberechnung der Farben.
-        :param base_colors: Eine Liste von Tupeln, die die relative Position und Farben darstellen.
-                            Beispiel: [(0.0, "blue"), (0.5, "white"), (1.0, "red")]
-        :param saturation_factors: Ein Dictionary, das angibt, wie die Sättigung jeder Farbe angepasst werden soll.
-                                Werte kleiner als 1 reduzieren die Sättigung, Werte größer als 1 erhöhen sie.
-                                Beispiel: {"blue": 0.5, "white": 0.2, "red": 1.5}
-        :return: Ein Colormap-Objekt
+        :param max_scale: scaling factor for the colour positions.
+        :param base_colors: list of (position, colour) tuples,
+                            e.g. [(0.0, "blue"), (0.5, "white"), (1.0, "red")]
+        :param adjustment_factors: per-colour saturation factors. Values below 1
+                                reduce saturation, values above 1 increase it,
+                                e.g. {"blue": 0.5, "white": 0.2, "red": 1.5}
+        :return: a colormap object
         """
         if adjustment_factors is None:
             adjustment_factors = {}
 
         def adjust_color_properties(color, factors):
-            # Konvertiere RGB zu HSV, passe die Sättigung und Helligkeit an, konvertiere zurück zu RGB
+            # RGB -> HSV, adjust saturation and brightness, back to RGB
             rgb = to_rgb(color)
             hsv = rgb_to_hsv(rgb)
             saturation_factor, brightness_factor = factors.get(color, [1, 1])
-            hsv[1] = max(0, min(1, hsv[1] * saturation_factor))  # Sättigung sicher im Bereich [0, 1] halten
-            hsv[2] = max(0, min(1, hsv[2] * brightness_factor))  # Helligkeit sicher im Bereich [0, 1] halten
+            hsv[1] = max(0, min(1, hsv[1] * saturation_factor))  # clamp saturation to [0, 1]
+            hsv[2] = max(0, min(1, hsv[2] * brightness_factor))  # clamp brightness to [0, 1]
             return hsv_to_rgb(hsv)
 
-        # Berechne die neuen Farbpositionen basierend auf max_scale
-        adjusted_colors = [(pos, adjust_color_properties(color, adjustment_factors)) 
+        # new colour positions based on max_scale
+        adjusted_colors = [(pos, adjust_color_properties(color, adjustment_factors))
                         for pos, color in base_colors]
         cmap = LinearSegmentedColormap.from_list("CustomCmap", adjusted_colors)
         return cmap
 
-        
-    
+
+
     def set_extent(self, extent_name):
         if extent_name in self.extents:
             self.current_extent = extent_name
@@ -140,7 +140,7 @@ class Plotting:
             m.drawcoastlines(linewidth=0.2)
             # Nur noch Parallelen automatisch labeln lassen, Meridiane OHNE Label:
             parallels = m.drawparallels(np.arange(30., 90., 30.), labels=[1, 0, 0, 0], linewidth=0.3)
-            m.drawmeridians(np.arange(-180., 181., 30.), labels=[0, 0, 0, 0], linewidth=0.3)  # alle Labels aus
+            m.drawmeridians(np.arange(-180., 181., 30.), labels=[0, 0, 0, 0], linewidth=0.3)  # no meridian labels
             # Parallelen: wie gehabt
             for lat, label_group in parallels.items():
                 for label in label_group[1]:
@@ -148,7 +148,7 @@ class Plotting:
                     label.set_fontname(font_name)
 
             # ----- NEU: Eigene Longitude-Labels -----
-            # Nach dem Zeichnen des Plots:
+            # after drawing
             draw_custom_lon_labels(ax, m, boundinglat=30, offset=-5, fontsize=8, fontname='serif', tick_degrees=[270, 300, 330, 0, 30, 60, 90])
 
             # -----------------------------------------
@@ -173,93 +173,6 @@ class Plotting:
         #fig.tight_layout()
 
         return fig, axs, cf_handles, cb
-
-
-
-    # def plot_isolines(
-    #     self, data, fig=None, axes=None, titles=None, show_colorbar=True, colorbar_kwargs=None
-    # ):
-    #     if data.ndim == 2:
-    #         data = data[np.newaxis, ...]
-    #     n_clusters = data.shape[0]
-    #     if fig is None or axes is None:
-    #         fig, axs = plt.subplots(nrows=1, ncols=n_clusters, figsize=(5*n_clusters,5))
-    #         axs = [axs] if n_clusters == 1 else np.ravel(axs).tolist()
-    #         _own_axes = True
-    #     else:
-    #         axs = axes if isinstance(axes, (list, np.ndarray)) else [axes]
-    #         _own_axes = False
-
-    #     if titles is None:
-    #         titles = [f"Cluster {i+1}" for i in range(n_clusters)]
-    #     elif isinstance(titles, str):
-    #         titles = [titles] * n_clusters
-
-    #     tick_size = plt.rcParams.get("xtick.labelsize", 8)
-    #     font_family = plt.rcParams.get("font.family", "serif")
-    #     font_name = font_family[0] if isinstance(font_family, (list, tuple)) else font_family
-    #     cf_handles = []
-    #     for i, ax in enumerate(axs):
-    #         m = Basemap(projection=self.projection, boundinglat=30, lon_0=self.lon_0,
-    #                     resolution='i', round=True, ax=ax)
-    #         x, y = m(self.lon, self.lat)
-    #         m.contour(x, y, data[i], levels=self.levels, colors='black', linewidths=0.8, ax=ax)
-    #         cf = m.contourf(x, y, data[i], levels=self.levels, cmap=self.cmap, norm=self.norm, alpha=1, ax=ax)
-    #         cf_handles.append(cf)
-    #         m.drawcoastlines(linewidth=0.2)
-    #         parallels = m.drawparallels(np.arange(30., 90., 30.), labels=[1, 0, 0, 0])
-    #         meridians = m.drawmeridians(np.arange(-180., 181., 30.), labels=[0, 0, 0, 1])
-            
-    #         # Parallelen: nur Größe/Font anpassen
-    #         for lat, label_group in parallels.items():
-    #             for label in label_group[1]:
-    #                 label.set_fontsize(tick_size)
-    #                 label.set_fontname(font_name)
-            
-    #         for lon, label_group in meridians.items():
-    #             for label in label_group[1]:
-    #                 degree = int(lon)
-    #                 if degree < 0:
-    #                     degree = 360 + degree
-    #                 label.set_text(f"{degree}°")
-    #                 label.set_fontsize(tick_size)
-    #                 label.set_fontname(font_name)
-    #                 # Probier beide aus, welche optisch besser passt:
-    #                 #label.set_rotation((degree + 180) % 360)
-    #                 label.set_rotation(degree)
-    #                 x, y = label.get_position()
-    #                 r_offset = 0.1  # Passe an!
-    #                 label.set_position((x, y + r_offset))
-
-    #                 label.set_va('center')
-    #                 label.set_ha('center')
-                    
-
-
-
-    #         ax.set_title(titles[i], pad=2)
-    #         ax.set_frame_on(False)
-    #         ax.set_ylim(0, 7.4e6)
-
-    #     # Colorbar nur, wenn alles intern erzeugt wurde
-    #     if _own_axes and show_colorbar:
-    #         colorbar_kwargs = colorbar_kwargs or {}
-    #         cb = fig.colorbar(
-    #             cf_handles[0], ax=axs, orientation='horizontal',
-    #             fraction=0.04, pad=0.08, **colorbar_kwargs
-    #         )
-    #         cb.set_label('[hPa]')
-    #         cb.set_ticks(self.levels)
-    #         cb.set_ticklabels([str(lvl) for lvl in self.levels])
-    #     else:
-    #         cb = None
-
-    #     return fig, axs, cf_handles, cb
-
-
-
-
-
     def plot_data(self, data, ncols=None):
         if ncols is None:
             ncols = data.shape[0]
@@ -286,7 +199,7 @@ class Plotting:
                     else:
                         label.set_text('')
             ax.set_frame_on(False)  # Rahmen ausblenden
-            ax.set_ylim(0, 7.4e6) 
+            ax.set_ylim(0, 7.4e6)
         try:
             cbar = self.fig.colorbar(ax=self.axs.ravel().tolist(), orientation='horizontal', extend='both', pad=0.1, shrink=0.7)
             if self.levels is not None:
@@ -295,6 +208,6 @@ class Plotting:
             cbar.set_label('[hPa]')
         except:
             pass
-        
+
         return self.fig, self.axs
-         
+

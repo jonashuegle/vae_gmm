@@ -13,11 +13,11 @@ from vae_gmm.plotting import Plotting
 
 class PatternReferenceManager:
     """
-    Erstellt/verwaltet Referenz-Cluster (PCA + KMeans) auf NetCDF-Daten
-    - Wurzel(Cos(lat))-Gewichtung via CustomDataset
-    - Caching von Labels/Patterns
-    - Optionale manuelle Namensgebung (Mapping)
-    - Plotting über externe Plotting-Klasse
+    Builds and manages reference clusters (PCA + k-means) on NetCDF data.
+    - sqrt(cos(lat)) weighting via CustomDataset
+    - caching of labels and patterns
+    - optional manual naming through a mapping
+    - plotting delegated to the Plotting class
     """
 
     def __init__(
@@ -52,13 +52,13 @@ class PatternReferenceManager:
         if self.f_mapping.exists():
             self.load_mapping()
         else:
-            # Automatisch plotten (ohne Namen) falls kein Mapping existiert
-            print("[PatternReferenceManager] Kein Mapping gefunden – Cluster werden mit Nummern geplottet.")
+            # Without a mapping the clusters are plotted unnamed.
+            print("[PatternReferenceManager] Kein Mapping gefunden - Cluster werden mit Nummern geplottet.")
             self.plot_clusters()
 
 
     def _load_or_compute_patterns(self):
-        """Lädt Patterns & Labels aus Cache oder berechnet sie neu."""
+        """Load patterns and labels from the cache, or recompute them."""
         try:
             if self.f_pattern.exists() and self.f_labels.exists():
                 self.patterns = xr.open_dataarray(self.f_pattern)
@@ -74,10 +74,10 @@ class PatternReferenceManager:
 
     def fit(self):
         """
-        Berechnet PCA + KMeans für Referenzdaten.
-        Ergebnis: self.patterns (xarray), self.labels (numpy)
+        Compute PCA + k-means on the reference data.
+        Results: self.patterns (xarray), self.labels (numpy)
         """
-        # Lade Daten (sqrt-Gewichtung via CustomDataset)
+        # sqrt latitude weighting is applied by CustomDataset.
         dataset = CustomDataset(
             nc_file_path=self.nc_file_path,
             sqrt=True,
@@ -90,13 +90,12 @@ class PatternReferenceManager:
         n_features = np.prod(msl.shape[1:])
         msl_flat = msl.reshape(n_samples, n_features)
 
-        # PCA & KMeans
         pca = PCA(n_components=self.n_pcs, random_state=self.random_state)
         pca_results = pca.fit_transform(msl_flat)
         kmeans = KMeans(n_clusters=self.n_clusters, n_init=100, random_state=self.random_state)
         labels = kmeans.fit_predict(pca_results)
 
-        # Komposition per Cluster: xarray-Objekt
+        # One composite per cluster, kept as an xarray object.
         ds = xr.open_dataset(self.nc_file_path)
         slp = ds[self.var_name].isel(time=slice(0, len(labels)))
         slp = slp.assign_coords(cluster=("time", labels))
@@ -106,13 +105,13 @@ class PatternReferenceManager:
         self.labels = labels
 
     def save_patterns(self):
-        """Speichert Patterns (xarray) und Labels (npy) im Cache."""
+        """Cache the patterns (xarray) and labels (npy)."""
         assert self.patterns is not None and self.labels is not None
         self.patterns.to_netcdf(self.f_pattern)
         np.save(self.f_labels, self.labels)
 
     def delete_cache(self):
-        """Löscht gespeicherte Patterns/Labels/Mapping."""
+        """Delete the cached patterns, labels and mapping."""
         for f in [self.f_pattern, self.f_labels, self.f_mapping]:
             if os.path.exists(f):
                 os.remove(f)
@@ -120,11 +119,10 @@ class PatternReferenceManager:
 
     def plot_clusters(self, plotter: Optional[Plotting] = None, titles: Optional[List[str]] = None, show_colorbar=True):
         """
-        Plottet die Cluster-Kompositionen.
+        Plot the cluster composites.
         """
         if self.patterns is None:
             raise ValueError("Keine Patterns gefunden!")
-        # Plotter initialisieren falls nicht gegeben
         if plotter is None:
             lon = self.patterns['lon'].values
             lat = self.patterns['lat'].values
@@ -143,21 +141,21 @@ class PatternReferenceManager:
         plotter.plot_isolines(self.patterns.values, titles=titles, show_colorbar=show_colorbar)
 
     def save_mapping(self, mapping: dict):
-        """Speichert das Mapping (Nummer → Name) als JSON."""
+        """Persist the index -> name mapping as JSON."""
         with open(self.f_mapping, "w") as f:
             json.dump({str(k): v for k, v in mapping.items()}, f, indent=2)
         self.mapping = {int(k): v for k, v in mapping.items()}
 
     def load_mapping(self):
-        """Lädt ein Mapping aus dem JSON-Cache."""
+        """Load a mapping from the JSON cache."""
         with open(self.f_mapping, "r") as f:
             raw = json.load(f)
         self.mapping = {int(k): v for k, v in raw.items()}
 
     def apply_mapping(self, mapping: Optional[dict] = None):
         """
-        Wendet Mapping auf die Cluster-Namen im DataArray an.
-        mapping: dict[int, str] (z.B. {0: "NAO-", ...})
+        Apply a mapping to the cluster names in the DataArray.
+        mapping: dict[int, str], e.g. {0: "NAO-", ...}
         """
         if mapping is not None:
             self.save_mapping(mapping)
@@ -172,20 +170,20 @@ class PatternReferenceManager:
                 return val
         new_names = [self.mapping.get(_to_int_if_possible(i), str(i)) for i in self.patterns.cluster.values]
         self.patterns = self.patterns.assign_coords(cluster=("cluster", new_names))
-        # Nach Anwendung neues Muster abspeichern:
+        # Persist the renamed patterns.
         self.save_patterns()
 
 
     def get_cluster_labels(self):
-        """Gibt die aktuellen Cluster-Labels für alle Zeitpunkte zurück."""
+        """Return the cluster labels for all time steps."""
         return self.labels
 
     def get_patterns(self):
-        """Gibt das aktuelle Muster-Array zurück (xarray.DataArray)."""
+        """Return the current pattern array (xarray.DataArray)."""
         return self.patterns
 
     def get_mapping(self):
-        """Gibt das aktuelle Mapping zurück (dict)."""
+        """Return the current mapping."""
         return self.mapping
 
 
@@ -193,15 +191,13 @@ class PatternReferenceManager:
 if __name__ == "__main__":
 
     mgr = PatternReferenceManager(
-                            "/home/a/a271125/work/data/slp.N_djfm_6h_aac_detrend_1deg_north_atlantic.nc",
-                             var_name="MSL", 
-                             n_pcs=14, 
+                            os.getenv("REFERENCE_NC", "./data/slp_reference.nc"),
+                             var_name="MSL",
+                             n_pcs=14,
                              n_clusters=5
                             )
 
-    # Nach Sichtung: Mapping anlegen und speichern
     mapping = {0: "SCAN", 1: "ATL-", 2: "NAO+", 3: "NAO-", 4: "DIPOL"}
     mgr.apply_mapping(mapping)
 
-    # Jetzt mit Namen geplottet!
     mgr.plot_clusters()

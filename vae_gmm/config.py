@@ -71,14 +71,14 @@ class TrainingConfig:
     log_img: bool = True
     log_scaled: bool = True
     dynamic_multiplier: float = 1.0
-    dynamic_reduction_factor: float = 0.9        
+    dynamic_reduction_factor: float = 0.9
     dynamic_update_epoch: Tuple[int, ...] = (300, 302, 304, 306, 308, 310, 312, 314, 316, 318, 320)
     seed: int = None
 
 @dataclass
 class TrainingSetup:
     """Training setup for the VAE and GMM components.
-    
+
     Attributes:
         warmup_epochs (int): Number of warmup epochs.
         vae_epochs (int): Number of epochs for VAE training.
@@ -144,4 +144,4 @@ class HardwareConfig:
 # default_training_config = TrainingConfig()
 # default_data_config = DataConfig()
 # default_hardware_config = HardwareConfig()
-    
+

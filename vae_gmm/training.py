@@ -49,9 +49,9 @@ class SwitchShuffleCallback(pl.Callback):
     def on_train_epoch_start(self, trainer, pl_module):
         if trainer.current_epoch == self.switch_epoch:
             print(f"Switching training dataloader shuffle to {self.new_shuffle_value} at epoch {trainer.current_epoch}")
-            # Set the flag in the DataModule
+            # The DataModule reads this flag when building the loader.
             trainer.datamodule.shuffle_train = self.new_shuffle_value
-            # If available: reload the dataloader (Lightning 2.x)
+            # Lightning 2.x only
             if hasattr(trainer, "reset_train_dataloader"):
                 trainer.reset_train_dataloader()
 
@@ -95,7 +95,6 @@ def get_latest_version(base_path):
         return None
 
 def main(argv=None):
-    #### Initialize argument parser ####
     parser = argparse.ArgumentParser(description='Training script for VAE.')
     parser.add_argument('--version', type=int, default=None, help='Version of the experiment for logging.') # --version 0
     parser.add_argument('--max_epochs', type=int, default=400, help='Maximum number of epochs for training.') # --max_epochs 100
@@ -113,8 +112,7 @@ def main(argv=None):
     np.random.seed(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
-    
-    #### Initialize configurations ####
+
     model_config = ModelConfig()
     training_config = TrainingConfig(seed=seed)
     training_setup = TrainingSetup()
@@ -122,11 +120,9 @@ def main(argv=None):
     hardware_config = HardwareConfig()
 
 
-    #### Initialize DataModule ####
-    # DataModule claass is defined in dataset.py and handles data loading and preprocessing
     data_module = DataModule(data_config.data_dir, batch_size=training_config.batch_size, num_workers=data_config.num_workers)
 
-        #### Learning rate finder ####
+        # Learning rate finder
     if args.find_lr:
         model = VAE(
             model_config=model_config,
@@ -159,19 +155,16 @@ def main(argv=None):
         else:
             args.version = (latest_version + 1) if latest_version is not None else 0
 
-    # Logger setup
     logger = TensorBoardLogger(save_dir=f"{data_config.log_dir}/", name=data_config.experiment, version=args.version)
 
-    # Checkpoint
     path = os.path.join(base_path, f'version_{args.version}/checkpoints/')
 
     # Get all existing checkpoints in the directory for resuming training
     log_files = glob.glob(os.path.join(path, '*.ckpt'))
     log_files.sort(key=os.path.getmtime)
 
-    #### Callbacks ####
+    # Callbacks
 
-    # save the last checkpoint
     last_checkpoint_callback = ModelCheckpoint(
         dirpath=path,
         save_last=True,
@@ -179,7 +172,6 @@ def main(argv=None):
         verbose=True,
     )
 
-    # save specific checkpoints at defined epochs
     specific_checkpoint_callback = SpecificEpochCheckpoint(
         save_epochs=[
             training_setup.kmeans_init_epoch,
@@ -196,7 +188,7 @@ def main(argv=None):
     # (impact has to be further investigated)
     switch_callback = SwitchShuffleCallback(switch_epoch=training_setup.kmeans_init_epoch, new_shuffle_value=False)
 
-    #### Initialize Trainer ####
+    # Trainer
     trainer = pl.Trainer(
         accelerator=hardware_config.accelerator,
         devices=hardware_config.devices,
@@ -209,7 +201,7 @@ def main(argv=None):
         precision=32,
     )
 
-    #### Start or Resume Training ####
+    # Start or resume training
     if args.resume and len(log_files) > 0:
         checkpoint_path = log_files[-1]
         print(f"Checkpoint {checkpoint_path} loaded.")

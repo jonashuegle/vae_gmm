@@ -29,10 +29,10 @@ class ClusteringLoader:
         device: torch.device,
         pca_kmeans_path: str = "pca_km.pkl",
         mapping_path: str = "cluster_mapping.json",
-        
+
         n_pcs: int = 10,
         n_clusters: int = None,
-        
+
         regime_order: Optional[list[str]] = None,
     ):
         self.device = device
@@ -62,24 +62,24 @@ class ClusteringLoader:
         self.kmeans_labels = self.km.labels_
         self.labels = self.vae_labels
 
-        # 1) Laden oder leeres Mapping für KMeans → Regime
+        # Load the k-means -> regime mapping, or start from an empty one.
         if os.path.isfile(self.mapping_path):
             with open(self.mapping_path, 'r') as f:
                 raw = json.load(f)
             self.km_to_regime = {int(k): v for k, v in raw.items()}
         else:
             self.km_to_regime = None
-            print("Kein KMeans→Regime-Mapping gefunden. Bitte zuerst assign_manual_mapping(...) aufrufen.")
+            print("Kein KMeans->Regime-Mapping gefunden. Bitte zuerst assign_manual_mapping(...) aufrufen.")
             self.plot_composition(self.kmeans_composition)
 
-        # 2) Platzhalter für Model → Regime (Auto-Mapping) und User Mapping
+        # Placeholders for the automatic model -> regime mapping and the user override.
         self.model_to_regime: Optional[dict[int, str]] = None
         self.named_labels: Optional[np.ndarray] = None
         self.user_mapping: Optional[dict[int, str]] = None
         self.user_mapping_correlations: Optional[dict[str, float]] = None
         self.similarity_matrix: Optional[np.ndarray] = None
 
-        # 3) Auto Mapping bei Start, falls km_to_regime vorhanden
+        # Map automatically at start-up when a k-means mapping is available.
         if self.km_to_regime is not None:
             print("Führe automatisches Mapping via flächengewichteter Korrelation nach Initialisierung aus...")
             self.auto_map_by_correlation()
@@ -117,7 +117,7 @@ class ClusteringLoader:
             print(f"PCA+KMeans berechnet und gespeichert in {self.pca_kmeans_path}.")
 
     def set_user_mapping(self, mapping: dict[int, str]):
-        """Setzt das User-Mapping und berechnet die zugehörigen Korrelationen."""
+        """Set the user mapping and compute the corresponding correlations."""
         if self.model_to_regime is None:
             self.auto_map_by_correlation()  # sicherstellen, dass similarity_matrix existiert
         self.user_mapping = mapping
@@ -137,11 +137,11 @@ class ClusteringLoader:
         return corrs
 
     def assign_manual_mapping(self, mapping: dict[int, str]):
-        """Speichert das KMeans→Regime-Mapping und lädt es als Standard ein."""
+        """Persist the k-means -> regime mapping and load it as the default."""
         with open(self.mapping_path, 'w') as f:
             json.dump({str(k): v for k, v in mapping.items()}, f, indent=2)
         self.km_to_regime = mapping
-        print(f"KMeans→Regime-Mapping gespeichert in {self.mapping_path}.")
+        print(f"KMeans->Regime-Mapping gespeichert in {self.mapping_path}.")
 
     @staticmethod
     def area_weights(lat: np.ndarray) -> np.ndarray:
@@ -234,7 +234,7 @@ class ClusteringLoader:
             print("Kein Modell-Mapping gefunden, führe auto_map_by_correlation aus...")
             self.auto_map_by_correlation()
 
-        # Mapping-Priorität abhängig vom Typ
+        # Mapping precedence depends on the label source.
         if override_mapping is not None:
             mapping = override_mapping
         elif comp_type == "vae":
@@ -244,7 +244,6 @@ class ClusteringLoader:
         else:
             mapping = None
 
-        # regime_order Handling wie gehabt
         if self.regime_order is not None and mapping is not None:
             name_to_cluster = {v: k for k, v in mapping.items()}
             try:
@@ -275,7 +274,7 @@ class ClusteringLoader:
 
 
     def plot_model_composition(self):
-        """Shortcut: Plotte VAE-Komposition mit dem gerade aktiven Mapping."""
+        """Plot the VAE composites using whichever mapping is currently active."""
         self.plot_composition(self.vae_composition)
 
     def cluster_periods(self) -> pd.DataFrame:
@@ -309,7 +308,7 @@ class ClusteringLoader:
 
     def plot_tsne(self, fig=None, ax=None, use_kmeans=True, n_components=2, fig_size=(10, 10), **kwargs):
         """
-        Plot t-SNE-Embedding mit Regime-Namen als Cluster-Labels.
+        Plot the t-SNE embedding, using regime names as cluster labels.
         """
         if use_kmeans:
             labels = self.kmeans_labels
@@ -343,7 +342,7 @@ class ClusteringLoader:
         return fig, ax
 
     def show_similarity_matrix(self):
-        """Gibt die aktuelle Similarity-Matrix als DataFrame aus."""
+        """Return the current similarity matrix as a DataFrame."""
         if self.similarity_matrix is not None:
             df = pd.DataFrame(self.similarity_matrix)
             print(df.round(3))
@@ -354,20 +353,19 @@ class ClusteringLoader:
 
     def get_named_and_sorted_vae_pattern(self):
         """
-        Gibt das VAE-Pattern zurück – umbenannt und in regime_order sortiert!
+        Return the VAE patterns, renamed and ordered by regime_order.
         """
         comp = self.vae_composition
-        # Hole das aktuelle Mapping: model_to_regime oder user_mapping
+        # The user override wins over the automatic mapping.
         mapping = self.user_mapping if self.user_mapping is not None else self.model_to_regime
         if mapping is None:
-            # Automatisches Mapping, falls noch nicht passiert!
+            # Make sure the automatic mapping has run.
             self.auto_map_by_correlation()
             mapping = self.user_mapping if self.user_mapping is not None else self.model_to_regime
 
 
-        # Cluster-Koordinate umbenennen
         comp_named = comp.assign_coords(cluster=("cluster", [mapping[int(i)] for i in comp.cluster.values]))
-        # Optional: jetzt nach regime_order sortieren
+        # Optionally reorder to regime_order.
         if self.regime_order is not None:
             present = [r for r in self.regime_order if r in comp_named.cluster.values]
             comp_named = comp_named.sel(cluster=present)

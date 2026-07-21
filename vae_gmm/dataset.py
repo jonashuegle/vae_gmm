@@ -46,10 +46,10 @@ class CustomDataset(Dataset):
         # Normalize the data
         self.normalize_data()
         if np.isnan(self.data['MSL']).any():
-            print("Warnung: NaNs nach Normalisierung!")
+            print("Warning: NaNs after normalisation")
 
         # Prepare the dataset for training
-        # Create a list of all spatial data and corresponding times 
+        # Create a list of all spatial data and corresponding times
         # Save data in RAM to avoid bottlenecks during training
         self.all_spatial_data = []
         self.all_times = []

@@ -1,4 +1,3 @@
-# vae_gmm/VAE_GMM.py
 from __future__ import annotations
 
 import os
@@ -134,7 +133,7 @@ class Decoder(nn.Module):
         x = self.final_activation(x)
         return x.view(x.size(0), *self.model_config.input_shape)
 
-        
+
 
 class VAE(pl.LightningModule):
     """
@@ -153,7 +152,6 @@ class VAE(pl.LightningModule):
         self.training_setup = training_setup
 
         self.save_hyperparameters()
-        # Modell-Parameter
         self.encoder = Encoder(model_config)
         self.decoder = Decoder(model_config)
 
@@ -164,8 +162,7 @@ class VAE(pl.LightningModule):
 
         self.clustering_params = [self.pi, self.mu_c, self.log_var_c]
         self.vae_params = list(self.encoder.parameters()) + list(self.decoder.parameters())
-       
-        # Loss Function
+
         self.loss_func = getattr(nn, model_config.loss_func_name)()
 
         self.val_loss_hist = []
@@ -177,24 +174,21 @@ class VAE(pl.LightningModule):
         This method collects samples from the encoder, applies K-Means++ to the latent space,
         and initializes the cluster parameters.
         """
-        # Kodierte Daten aus dem Encoder holen
         samples = self.collect_samples(
             return_mu=True,
             return_x=False,
-            return_timestamp=False, 
+            return_timestamp=False,
             dataloader= self.trainer.datamodule.all_data_dataloader())
-        
+
         mu = samples["mu"]
 
 
-        # Führe K-Means++ mit fester Clusteranzahl durch
         kmeans = KMeans(n_clusters=self.model_config.num_clusters, n_init=100, random_state=42, init='k-means++')
-        kmeans.fit(mu)  # Trainiere K-Means auf den Latent-Space-Daten
+        kmeans.fit(mu)  # fit on the latent space
         mu_c_init = kmeans.cluster_centers_  # K-Means Clusterzentren
         cluster_labels = kmeans.labels_       # Clusterzuweisungen
 
-        # Speichere die z_sample und Clusterlabels im Log-Verzeichnis
-        # Versuche das Log-Verzeichnis aus dem Logger zu beziehen, falls vorhanden.
+        # Persist the k-means input and labels so the initialisation can be inspected later.
         if hasattr(self, "logger") and hasattr(self.logger, "log_dir"):
             save_dir = self.logger.log_dir
         else:
@@ -204,19 +198,16 @@ class VAE(pl.LightningModule):
         print(f"K-Means-Initialisierung abgeschlossen! Cluster-Zentren erfolgreich gesetzt.")
         print(f"Clusterlabels wurden im Ordner {save_dir} gespeichert.")
 
-        # Konvertiere K-Means-Zentren zu Torch-Parameter
         mu_c = torch.tensor(mu_c_init, device=self.device, dtype=torch.float32)
 
-        # Leichte zufällige Störung für bessere Robustheit
-        mu_c += torch.randn_like(mu_c) * 0.05  
+        # Perturb the centres slightly so two identical ones cannot stay degenerate.
+        mu_c += torch.randn_like(mu_c) * 0.05
 
-        # Setze eine konstante Varianz für alle Cluster
         log_var_c = torch.ones_like(mu_c) * np.log(0.5)
 
-        # Setze gleichmäßige Cluster-Prioren
         pi = torch.ones(self.model_config.num_clusters, device=self.device) / self.model_config.num_clusters
 
-        # Setze die Parameter im Modell (nun trainierbar)
+        # Registered as parameters: the mixture is trained jointly with the encoder.
         self.mu_c = nn.Parameter(mu_c, requires_grad=True)
         self.log_var_c = nn.Parameter(log_var_c, requires_grad=True)
         self.pi = nn.Parameter(pi, requires_grad=True)
@@ -245,7 +236,7 @@ class VAE(pl.LightningModule):
         return x_recon, mu, log_var, z
 
     def gaussian_mixture_log_prob(self, z):
-        """        
+        """
         Computes the log probability of the latent variable z under a Gaussian Mixture Model (GMM).
         Args:
             z (Tensor): Latent variable (batch_size, latent_dim).
@@ -278,7 +269,7 @@ class VAE(pl.LightningModule):
         max_std = std_c.max(dim=0)[0]
         min_std = std_c.min(dim=0)[0]
         return (max_std / (min_std + 1e-6)).mean()
-    
+
 
     def compute_loss_components(self, x, x_recon, mu, log_var, z):
         """
@@ -395,9 +386,6 @@ class VAE(pl.LightningModule):
 
         self.get_kld_weight()
 
-        # if self.current_epoch == self.training_setup.warmup_epochs:
-        #     print("Initializing clustering parameters with KMeans++...")
-        #     self.initialize_cluster_parameters()
 
         if self.current_epoch == self.training_setup.kmeans_init_epoch:
             print("Initializing clustering parameters with KMeans++...")
@@ -415,30 +403,29 @@ class VAE(pl.LightningModule):
         """
         vae_opt, clustering_opt = self.optimizers()
         x, _ = batch
-        
-        # Gradienten vor jedem Schritt zurücksetzen
+
         vae_opt.zero_grad()
         clustering_opt.zero_grad()
-        
+
         x_recon, mu, log_var, z = self(x)
         losses = self.loss_function(x, x_recon, mu, log_var, z, prefix='train')
-        
+
         if self.current_epoch < self.training_setup.warmup_epochs:
-            # Nur VAE Training
+            # VAE-only phase
             vae_loss = losses['train/loss/recon'] + losses['train/loss/global_kld']
             self.manual_backward(vae_loss)
             vae_opt.step()
         else:
-            # Volles Training mit allen Losses
+            # Full objective including the clustering terms
             self.manual_backward(losses['train/loss/total'])
             vae_opt.step()
             clustering_opt.step()
-        
+
         self.log_dict(losses, batch_size=self.trainer.datamodule.batch_size,
                     on_step=False, on_epoch=True, sync_dist=True)
-        
+
         return losses['train/loss/total']
-    
+
 
     def compute_cluster_metrics(self, z, gamma):
         """
@@ -463,7 +450,7 @@ class VAE(pl.LightningModule):
             global_sil = -1.0
         else:
             global_sil = silhouette_score(z_np, cluster_labels)
-        
+
         # Per-Cluster Silhouette Scores
         if len(unique_labels) < 2:
             per_cluster_sil = {f"cluster_{i}": np.nan for i in range(self.model_config.num_clusters)}
@@ -477,7 +464,7 @@ class VAE(pl.LightningModule):
                 else:
                     per_cluster_sil[f"cluster_{i}"] = float(np.mean(sample_sil[idx]))
 
-        # Davies-Bouldin und Calinski-Harabasz Index (only if at least 2 clusters exist)
+        # Davies-Bouldin and Calinski-Harabasz are only defined for at least two clusters.
         if len(unique_labels) < 2:
             db_index = np.nan
             ch_index = np.nan
@@ -485,7 +472,6 @@ class VAE(pl.LightningModule):
             db_index = davies_bouldin_score(z_np, cluster_labels)
             ch_index = calinski_harabasz_score(z_np, cluster_labels)
 
-        # Cluster Balance (as previously defined)
         balance = self.cluster_balance_metric(gamma)
         balance_val = balance.item() if isinstance(balance, torch.Tensor) else balance
 
@@ -505,8 +491,7 @@ class VAE(pl.LightningModule):
         entropy = -np.sum(frequencies * np.log(frequencies + 1e-10))
 
         # Variance of Individual Latent Dimensions
-        #latent_variances = np.var(z_np, axis=0)
-        
+
         metrics = {
             'global_silhouette': global_sil,
             'per_cluster_silhouette': per_cluster_sil,  # Dictionary with per-cluster scores
@@ -539,7 +524,7 @@ class VAE(pl.LightningModule):
             losses['val/metric/density_variation'] = density_variation
             losses['val/metric/gaussian_similarity'] = gaussian_similarity
             losses['val/metric/local_density'] = local_density
-            
+
             if self.current_epoch >= self.training_setup.kmeans_init_epoch:
                 # Once enough epochs have passed, also compute the cluster-related metrics:
                 _, gamma = self.gaussian_mixture_log_prob(z)
@@ -547,7 +532,7 @@ class VAE(pl.LightningModule):
                 silhouette = self.compute_silhouette(z, gamma)
                 # Compute additional cluster metrics
                 cluster_metrics = self.compute_cluster_metrics(z, gamma)
-                
+
                 losses['val/metric/balance'] = balance_score
                 losses['val/metric/silhouette'] = silhouette
                 # Add all keys from cluster_metrics
@@ -572,11 +557,11 @@ class VAE(pl.LightningModule):
                 for i in range(self.model_config.num_clusters):
                     losses[f'cluster/per_cluster_silhouette/{i}'] = -1.0
 
-            
+
             self.log_dict(losses, batch_size=self.trainer.datamodule.batch_size,
                         on_step=False, on_epoch=True, sync_dist=True)
             return losses['val/loss/total']
-        
+
 
     def on_train_epoch_end(self):
         """
@@ -622,12 +607,12 @@ class VAE(pl.LightningModule):
                 vae_scheduler.step(current_loss)
 
 
-        # 4. TSNE Visualization every 5 epochs
+        # t-SNE visualisation every 5 epochs
         if self.training_config.log_img and self.current_epoch % 5 == 0:
             samples = self.collect_samples(return_mu=True, return_x=False, return_timestamp=False)
             mu = torch.tensor(samples["mu"])
             self.log_tsne(mu)
-            
+
 
     def cluster_balance_metric(self, gamma, threshold_factor=0.5):
         """
@@ -641,17 +626,15 @@ class VAE(pl.LightningModule):
         Returns:
             Tensor: Score (higher is better)
         """
-        # 1. Compute cluster sizes
         cluster_sizes = gamma.sum(0)  # Number of assignments per cluster
         avg_cluster_size = cluster_sizes.mean()  # Average cluster size
 
-        # 2. Shrinkage Penalty: Penalty for clusters < threshold_factor * average
+        # Soft assignments let a cluster shrink towards zero without ever emptying,
         shrinkage_penalty = torch.sum(torch.relu((threshold_factor * avg_cluster_size) - cluster_sizes))
 
-        # 3. Balance Penalty: Penalty for imbalanced clusters (standard deviation)
+        # so shrinkage and imbalance have to be penalised explicitly.
         balance_penalty = torch.std(cluster_sizes)
 
-        # 4. Combined Score (the smaller, the worse)
         score = - (balance_penalty + 5.0 * shrinkage_penalty)
 
         return score  # Higher score = better clustering
@@ -671,7 +654,7 @@ class VAE(pl.LightningModule):
 
         # Check number of unique labels
         unique_labels = len(np.unique(cluster_labels))
-        
+
         # If less than 2 clusters, return a default value
         if unique_labels < 2:
             return torch.tensor(-1.0).to(self.device)  # or another meaningful default value
@@ -692,7 +675,7 @@ class VAE(pl.LightningModule):
         k_nearest = k_nearest[:, 1:]  # Remove distance to self
         local_density = torch.std(k_nearest, dim=1).mean()
         return local_density
-        
+
 
     def compute_latent_smoothness(self, z, k=10):
         """
@@ -707,8 +690,8 @@ class VAE(pl.LightningModule):
         # Local Density Variation
         distances = torch.cdist(z, z)
         knn_distances, _ = torch.topk(distances, k, largest=False)
-        density_variation = torch.std(knn_distances[:, 1:])  # Erste Distanz ist immer 0 (zu sich selbst)
-        
+        density_variation = torch.std(knn_distances[:, 1:])  # the first neighbour is the point itself, distance 0
+
         # Gaussian Similarity
         z_mean = torch.mean(z, dim=0)
         z_std = torch.std(z, dim=0)
@@ -716,7 +699,7 @@ class VAE(pl.LightningModule):
 
         # Combined Metric: Higher values = better, smoother distribution
         smoothness = -density_variation + gaussian_similarity
-        
+
         return smoothness, density_variation, gaussian_similarity
 
     def collect_samples(self, return_mu=True, return_x=True, return_timestamp=True, dataloader = None):
@@ -792,8 +775,8 @@ class VAE(pl.LightningModule):
         # Visualization
         plt.figure(figsize=(10, 10))
         sns.scatterplot(
-            x=mu_tsne[:, 0], 
-            y=mu_tsne[:, 1], 
+            x=mu_tsne[:, 0],
+            y=mu_tsne[:, 1],
             hue=cluster_labels,
             palette=palette,
             alpha=0.4,
@@ -806,7 +789,7 @@ class VAE(pl.LightningModule):
                 center[0], center[1],
                 marker='X',
                 color=palette[cluster_id],  # Color of the cluster
-                s=200, 
+                s=200,
                 label=f'Cluster {unique_clusters[cluster_id]} Center'
             )
 
@@ -856,7 +839,6 @@ class VAE(pl.LightningModule):
             start_epoch (int): Start point of the annealing.
             duration (int): Duration of the annealing.
             end_value (float): Target value at the end of the annealing.
-            annealing_type (str): Type of the annealing, either "sigmoid" or "linear".
 
         Returns:
             float: The computed annealing factor.
@@ -881,11 +863,11 @@ class VAE(pl.LightningModule):
         elif self.training_setup.annealing_type == "linear":
             # Linear annealing (uniform increase from min_value to end_value)
             return min_value + (progress * (end_value - min_value))
-        
+
         else:
             raise ValueError("annealing_type must be 'sigmoid' or 'linear'")
 
-        
+
 
     def get_kld_weight(self):
         """
@@ -926,7 +908,6 @@ class VAE(pl.LightningModule):
         # VAE parameters: encoder and decoder
         vae_params = list(self.encoder.parameters()) + list(self.decoder.parameters())
         # Cluster parameters (e.g., pi, mu_c, log_var_c, or other dummy-based parameters)
-        #cluster_params = [self.pi, self.mu_c, self.log_var_c]
         cluster_params = [self.mu_c, self.pi, self.log_var_c]
 
         # Optimizer for the two areas
@@ -935,7 +916,7 @@ class VAE(pl.LightningModule):
 
         # Warmup configuration: In the first 25 epochs, the cluster LR should remain 0,
         # then linear increase over 'warmup_epochs' (here 90 epochs) to full LR.
-        
+
         warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
             opt_cluster,
             lr_lambda=lambda epoch: lr_lambda(epoch, warmup_epochs=self.training_setup.clustering_warmup, linear_epochs=self.training_setup.linear_epochs)
@@ -958,10 +939,10 @@ class VAE(pl.LightningModule):
 
         # VAE scheduler (e.g., a ReduceLROnPlateau)
         vae_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            opt_vae, 
-            mode="min", 
-            factor=self.training_setup.vae_lr_factor, 
-            patience=self.training_setup.vae_lr_patience, 
+            opt_vae,
+            mode="min",
+            factor=self.training_setup.vae_lr_factor,
+            patience=self.training_setup.vae_lr_patience,
             min_lr=1e-6
         )
 
@@ -976,12 +957,9 @@ class VAE(pl.LightningModule):
 
 
 if __name__ == "__main__":
-    #### Main Script for Training and Testing the VaDE Model ####
-    # This script initializes the model, data module, and trainer,
-    # and runs either a learning rate finder or a full training session.
     parser = argparse.ArgumentParser(description='Test Script for VaDE.')
     args = parser.parse_args()
-    
+
     torch.set_float32_matmul_precision('medium')
 
     default_model_config = ModelConfig()
@@ -1000,7 +978,7 @@ if __name__ == "__main__":
         default_model_config,
         default_training_config,
         default_training_setup,
-    )   
+    )
 
 
     trainer = pl.Trainer(

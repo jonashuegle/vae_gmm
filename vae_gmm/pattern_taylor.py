@@ -12,25 +12,24 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import matplotlib.patches as mpatches
 from matplotlib.gridspec import GridSpec
 from matplotlib.lines import Line2D
-import numpy as np
 
 from vae_gmm.pattern_reference_manager import PatternReferenceManager
 from vae_gmm.plotting import Plotting
 
 def curved_text(ax, text, radius, center=(0,0), start_angle=-160, end_angle=160, **kwargs):
-    # Text wird als Einzelbuchstaben platziert
+    # placed character by character along the arc
     n = len(text)
     angles = np.linspace(np.deg2rad(start_angle), np.deg2rad(end_angle), n)
     for i, (char, angle) in enumerate(zip(text, angles)):
-        # Position auf dem Kreisrand
+        # position on the circle
         x = center[0] + radius * np.cos(angle)
         y = center[1] + radius * np.sin(angle) * 0.94
-        rotation = np.rad2deg(angle) + 90  # +90, damit es entlang des Kreises steht
+        rotation = np.rad2deg(angle) + 90  # +90 so the glyph follows the circle
         ax.text(x, y, char, rotation=rotation, ha='center', va='center', **kwargs)
 
 
 def area_weights(lat: np.ndarray) -> np.ndarray:
-    """cos(lat)‑Gewichte (1‑D)."""
+    """cos(lat)-Gewichte (1-D)."""
     return np.cos(np.deg2rad(lat))
 
 def to_pca_matrix(
@@ -91,17 +90,19 @@ def weighted_stats(ref: np.ndarray, exp: np.ndarray, w: np.ndarray):
 
 class PatternComparator:
     """
-    Erstellt/liest PCA‑KMeans‑Referenzmuster und vergleicht neue Cluster‑Pattern.
+    Builds or loads PCA/k-means reference patterns and compares new cluster patterns against them.
     """
     def __init__(
         self,
         reference_manager: PatternReferenceManager = None,
     ):
         if reference_manager is None:
-            reference_manager = PatternReferenceManager(
-                "/home/a/a271125/work/data/slp.N_djfm_6h_aac_detrend_1deg_north_atlantic.nc"
-                )
-        # Referenz aus Manager übernehmen
+            raise ValueError(
+                "reference_manager is required. Create one explicitly, e.g. "
+                "PatternReferenceManager('path/to/reference.nc')."
+            )
+
+        # take the reference from the manager
         self.manager = reference_manager
         self.pat_ref = reference_manager.get_patterns()
         self.labels_ref = reference_manager.get_cluster_labels()
@@ -113,14 +114,14 @@ class PatternComparator:
 
     def match_patterns(self, patterns: xr.DataArray) -> list[int]:
         """
-        Liefert Mapping-Liste: mapping[i] = j  ➜  pattern_i ↔ ref_j
-        (Vergleicht neue Patterns mit der Referenz nach maximaler Korrelation, Hungarian-Algorithmus)
+        Return a mapping list where mapping[i] = j means pattern_i corresponds to ref_j.
+        Patterns are matched to the reference by maximum correlation (Hungarian algorithm).
         """
         if patterns.dims[0] != "cluster":
             raise ValueError("patterns muss die Dimension 'cluster' an erster Stelle haben")
         if patterns.shape[0] != self.n_cluster:
             raise ValueError("Anzahl Cluster stimmt nicht mit Referenz überein")
-        # Flächengewichtung
+        # area weighting
         w2d = area_weights(self.lat)[:, None] * np.ones_like(self.pat_ref.isel(cluster=0).values)
         # Korrelationsmatrix (Model_i vs Ref_j)
         C = np.empty((self.n_cluster, self.n_cluster))
@@ -131,84 +132,9 @@ class PatternComparator:
                     patterns.isel(cluster=i).values.ravel(),
                     w2d.ravel(),
                 )
-                C[i, j] = -R  # Hungarian = Minimierungs‑Problem
+                C[i, j] = -R  # Hungarian = Minimierungs-Problem
         row, col = linear_sum_assignment(C)
-        return col.tolist()  # model‑>ref
-
-
-
-    # def plot_taylor_halfcircle(self, std_ref, stds, corrs, labels=None, ax=None, r_max=1.5, optimum_idx=None, cluster_colors=None):
-    #     if ax is None:
-    #         fig, ax = plt.subplots(figsize=(6,3.7))
-    #     ax.set_aspect('equal', 'box')
-    #     ax.set_xlim(-r_max*1.05, r_max*1.05)
-    #     ax.set_ylim(-r_max*1.05, 0.05*r_max)
-
-    #     # Standardabweichungskreise (explizit Halbkreise, Rand bei r_max!)
-    #     sigma_ticks = np.arange(0.5, r_max+0.001, 0.5)
-    #     theta = np.linspace(0, np.pi, 300)
-    #     for s in sigma_ticks:
-    #         x = s * np.cos(theta)
-    #         y = -s * np.sin(theta)  # Nach unten!
-    #         lw = 2 if np.isclose(s, r_max) else 1
-    #         ax.plot(x, y, color='grey', lw=lw, ls='-' if np.isclose(s, r_max) else '--', zorder=1, alpha=0.7)
-    #         # Ticks am rechten Rand
-    #         ax.text(s-0.01, 0.02, f"{s:.1f}", ha='center', va='bottom', fontsize=7, color='black', alpha=0.8)
-
-    #     # Korrelationslinien (gleichmäßige Winkel, z.B. alle 15°)
-    #     for deg in np.arange(0, 181, 15):
-    #         angle = np.deg2rad(deg)
-    #         r = np.cos(angle)
-    #         x = [0, r_max * np.cos(angle)]
-    #         y = [0, -r_max * np.sin(angle)]  # Nach unten!
-    #         ax.plot(x, y, color='grey', lw=0.9, ls=':', zorder=1, alpha=0.6)
-    #         # Korrelationslabel an äußeren Rand
-    #         if deg % 30 == 0:
-    #             label_corr = np.cos(angle)
-    #             lx = 1.2 * r_max * np.cos(angle)
-    #             ly = -1.14 * r_max * np.sin(angle)
-    #             ax.text(lx, ly, f"{label_corr:.1f}", fontsize=7, ha='center', va='center', color='k', alpha=0.8)
-
-    #     # Punkte plotten (immer gleiche Farben)
-    #     if labels is None:
-    #         labels = [f"Cluster {i+1}" for i in range(len(stds))]
-    #     for i, (std, corr) in enumerate(zip(stds, corrs)):
-    #         theta = np.arccos(corr)
-    #         r = std / std_ref
-    #         x = r * np.cos(theta)
-    #         y = -r * np.sin(theta)
-    #         marker = 'o'
-    #         ms = 5
-    #         if optimum_idx is not None and i == optimum_idx:
-    #             marker = '*'
-    #             ms = 8
-    #         color = cluster_colors[i] if cluster_colors is not None else f"C{i}"
-    #         ax.plot(x, y, marker, ms=ms, color=color, markeredgecolor='k', label=labels[i], zorder=3)
-    #         #ax.text(x+0.1*r_max, y, labels[i], va='center', ha='left', fontsize=11, color=color, zorder=4)
-
-    #     # Referenzpunkt (σ=1, θ=0 → (1,0))
-    #     ax.plot([1], [-0.05], 'kv', ms=3, label='Referenz', zorder=5)
-    #     #ax.text(1.03, 0.03*r_max, 'Ref', va='bottom', ha='left', fontsize=11, color='k')
-
-    #     ax.axis('off')
-    #     # Achsen-Labels (unten)
-
-    #     curved_text(
-    #         ax,
-    #         "Correlation",
-    #         radius=r_max*1.4,  # etwas größer als die Plots, damit es außen steht
-    #         center=(0,0),
-    #         start_angle=-65,
-    #         end_angle=-15,
-    #         fontsize=8,
-    #         color='k'
-    #     )
-
-    #     ax.text(r_max * 0.85, 0.25* r_max, r"$\sigma/\sigma_{\rm ref}$", ha='left', va='center', fontsize=10)
-
-    #     return ax
-
-
+        return col.tolist()  # model->ref
     def plot_taylor_halfcircle(
         self,
         std_ref,
@@ -226,9 +152,8 @@ class PatternComparator:
         curved_text_kwargs=None
     ):
         """
-        Dynamisch anpassbarer Taylor-Halbkreisplot mit style-dicts für Ticks, Marker, Ref, Axislabel etc.
+        Configurable Taylor half-circle plot; style dicts control ticks, markers, reference and axis labels.
         """
-        import matplotlib.pyplot as plt
 
         # Default-Styles
         tick_kwargs = tick_kwargs or {
@@ -260,7 +185,7 @@ class PatternComparator:
             y = -s * np.sin(theta)
             lw = 2 if np.isclose(s, r_max) else 1
             ax.plot(x, y, color='grey', lw=lw, ls='-' if np.isclose(s, r_max) else '--', zorder=1, alpha=0.7)
-            # Ticks am rechten Rand
+            # ticks on the right edge
             ax.text(s - 0.01, 0.02, f"{s:.1f}", ha='center', va='bottom', **tick_kwargs)
 
 
@@ -276,7 +201,7 @@ class PatternComparator:
                 ax.text(lx, ly, f"{label_corr:.1f}", ha='center', va='center', **tick_kwargs)
 
 
-        # Punkte plotten (immer gleiche Farben)
+        # plot the points, colours stay fixed
         if labels is None:
             labels = [f"Cluster {i+1}" for i in range(len(stds))]
         for i, (std, corr) in enumerate(zip(stds, corrs)):
@@ -295,7 +220,7 @@ class PatternComparator:
             ax.plot(x, y, marker=mk["marker"], color=color, markeredgecolor='k',
                     label=labels[i], ms=mk["ms"], zorder=mk.get("zorder", 3))
 
-        # Referenzpunkt (σ=1, θ=0 → (1,0))
+        # Referenzpunkt (sigma=1, theta=0 -> (1,0))
         ax.scatter([1], [0.0], **ref_marker_kwargs, label='Reference')
 
         ax.axis('off')
@@ -322,14 +247,14 @@ class PatternComparator:
 
     def plot_comparison_grid(self, pat_mod, mapping, plotter, figsize=(13, 3.5*4), std_ref=1.0):
         """
-        Plottet: Referenzkarte – Taylor-Halbkreis – Modellkarte, für jedes Cluster in einer Zeile.
-        Und erzeugt eine Legende am unteren Rand!
+        One row per cluster: reference map, Taylor half circle, model map,
+        with a shared legend along the bottom.
         """
         pat_ref = self.pat_ref
         nC = pat_ref.sizes["cluster"]
         cluster_colors = self.cluster_colors
 
-        # Setup Figure und GridSpec
+        # figure and GridSpec
         fig = plt.figure(figsize=figsize, constrained_layout=True)
         gs = GridSpec(nC, 3, figure=fig, left=0.04, right=0.98, top=0.97, bottom=0.23, wspace=-0.15, hspace=0.1)
 
@@ -341,7 +266,7 @@ class PatternComparator:
             h = Line2D(
                 [], [], marker='o', ms=8, mec='k', mfc=cluster_colors[i_mod],
                 linestyle='None',
-                label=f"Cluster {mod_labels[i_mod]} → {ref_labels[j_ref]}"
+                label=f"Cluster {mod_labels[i_mod]} -> {ref_labels[j_ref]}"
             )
             handles.append(h)
 
@@ -355,7 +280,7 @@ class PatternComparator:
                 show_colorbar=False
             )
 
-            # -- 2. Taylor-Halbkreis (Mitte, nach unten geöffnet)
+            # Taylor half circle, opening downwards
             ax_taylor = fig.add_subplot(gs[j, 1])
             stds = []
             corrs = []
@@ -401,14 +326,13 @@ class PatternComparator:
         fig.legend(
             handles=handles,
             loc='lower center',
-            bbox_to_anchor=(0.5, -0.14),  # jetzt weiter oben, damit sie in den freien Bereich passt
+            bbox_to_anchor=(0.5, -0.14),  # raised to fit the free area
             ncol=min(2, 5),
             frameon=False,
             fontsize=10
         )
 
 
-        #plt.tight_layout(rect=[0, 0.05, 1, 1])  # unten Platz lassen für Legende
 
 
     def compare_and_plot(
@@ -437,12 +361,10 @@ class PatternComparator:
         ref_color="black"
     ):
         """
-        Für JEDEN Referenzcluster ein Taylorplot:
-        - Referenzpunkt bei (1,0)
-        - Alle Modellcluster werden auf diesen einen Referenzcluster projiziert und geplottet.
-        Das ist das klassische "Paper"-Taylorplot-Verhalten!
+        One Taylor plot per reference cluster:
+        - reference point at (1,0)
+        - every model cluster is projected onto that single reference cluster.
         """
-        import matplotlib.pyplot as plt
 
         ref_patterns = self.pat_ref  # (cluster, lat, lon)
         nC = ref_patterns.sizes["cluster"]
@@ -462,9 +384,9 @@ class PatternComparator:
 
         for ref_idx, (ax, ref_name) in enumerate(zip(axes, cluster_labels)):
             self.plot_taylor_halfcircle(std_ref=1.0, stds=[], corrs=[], ax=ax, r_max=r_max)
-            # Referenzpunkt bei (1,0)
+            # reference point at (1,0)
             ax.plot(1.0, 0.0, ref_marker, ms=13, color=ref_color, label="Reference", zorder=5)
-            # Alle Modellcluster werden auf DIESEN Referenzcluster bezogen!
+            # every model cluster is compared against this reference cluster
             for mod_idx, model in enumerate(model_patterns):
                 n_modc = model.sizes["cluster"]
                 for mod_c_idx in range(n_modc):
@@ -523,24 +445,21 @@ class PatternComparator:
         ref_marker_kwargs=None
     ):
         """
-        Plottet EINEN Taylorplot mit:
-        - allen Referenzclustern als Marker (z.B. Stern) auf (σ/σ_ref=1, Corr=1)
-        - und jeweils NUR den best-match-Modellcluster je Referenzcluster
+        A single Taylor plot showing:
+        - every reference cluster as a marker at (sigma/sigma_ref=1, corr=1)
+        - only the best-matching model cluster for each reference cluster
         """
-
-        import matplotlib.pyplot as plt
-        import numpy as np
 
         # Referenzmuster laden
         ref_patterns = self.pat_ref  # (cluster, lat, lon)
         nC = ref_patterns.sizes["cluster"]
         n_mod = len(model_patterns)
 
-        # Achse anlegen
+        # create the axis
         if ax is None:
             fig, ax = plt.subplots(figsize=figsize)
 
-        # Default-Labels und -Styles
+        # default labels and styles
         if model_labels is None:
             model_labels = [f"Modell {i+1}" for i in range(n_mod)]
         if cluster_labels is None:
@@ -565,10 +484,10 @@ class PatternComparator:
             tick_kwargs=tick_kwargs,
             axis_label_kwargs=axis_label_kwargs,
             curved_text_kwargs=curved_text_kwargs,
-            marker_kwargs=marker_kwargs  # wird hier angewendet, falls du stds/corrs übergibst
+            marker_kwargs=marker_kwargs  # applied when stds/corrs are given
         )
 
-        # Best-Match-Modellcluster je Referenz einzeichnen
+        # draw the best-matching model cluster for each reference
         for mod_idx, model in enumerate(model_patterns):
             n_modc = model.sizes["cluster"]
             for ref_idx in range(nC):
@@ -594,17 +513,17 @@ class PatternComparator:
                         best_corr = corr
                         best_x, best_y = x, y
 
-                # Styles für diesen Punkt aus marker_kwargs übernehmen
+                # per-point style from marker_kwargs
                 color = colors[ref_idx % len(colors)]
                 marker = markers[mod_idx % len(markers)]
                 label = f"{model_labels[mod_idx]} {cluster_labels[ref_idx]}"
 
                 mk = dict(marker_kwargs or {})
                 mk.setdefault("marker", marker)
-                # Wenn der Nutzer 'ms' (Durchmesser) angibt, in 's' umwandeln (Fläche):
+                # 'ms' is a diameter, matplotlib wants an area in 's'
                 if "ms" in mk and "s" not in mk:
                     mk["s"] = mk.pop("ms") ** 2
-                mk.setdefault("s", 7**2)             # Standard-Fläche (bei ms=7)
+                mk.setdefault("s", 7**2)             # default area, equivalent to ms=7
                 mk.setdefault("color", color)
                 # edgecolor statt markeredgecolor
                 mk.setdefault("edgecolor", "k")
@@ -615,12 +534,12 @@ class PatternComparator:
                 # Scatter statt plot
                 ax.scatter(best_x, best_y, **mk)
 
-        # Referenzpunkt mit eigenem kwargs (s, marker etc.)
+        # reference point with its own kwargs
         #ax.scatter([1], [0.0], **ref_marker_kwargs, label='Refence')
 
         ax.axis('off')
 
-        # Achsenbeschriftung „σ/σ_ref“
+        # axis label for sigma/sigma_ref
         curved_text(
             ax,
             "Correlation",
@@ -632,7 +551,7 @@ class PatternComparator:
         )
         ax.text(r_max * 0.85, 0.25 * r_max, r"$\sigma/\sigma_{\rm ref}$", ha='left', va='center', **axis_label_kwargs)
 
-        # Legende nur eindeutige Einträge
+        # keep only unique legend entries
         handles, labels = ax.get_legend_handles_labels()
         seen = set()
         unique = [(h, l) for h, l in zip(handles, labels) if l not in seen and not seen.add(l)]
