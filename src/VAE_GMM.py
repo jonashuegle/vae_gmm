@@ -229,69 +229,6 @@ class VAE(pl.LightningModule):
         self.log_var_c = nn.Parameter(log_var_c, requires_grad=True)
         self.pi = nn.Parameter(pi, requires_grad=True)
 
-    
-
-    def get_annealing_factor(self, current_epoch, start_epoch, duration, end_value):
-        """
-        Calculates the annealing factor with defined start and end boundaries.
-
-        Args:
-            current_epoch (int): Current epoch.
-            start_epoch (int): Start point of the annealing.
-            duration (int): Duration of the annealing.
-            end_value (float): Target value at the end of the annealing.
-            annealing_type (str): Type of the annealing, either "sigmoid" or "linear".
-
-        Returns:
-            float: The calculated annealing factor.
-        """
-        if not self.training_config.use_annealing:
-            return end_value
-
-        min_value = 1e-3 * end_value  # Start value of the annealing
-
-        if current_epoch < start_epoch:
-            return min_value  # Before the start, the value remains minimal
-
-        # Calculate progress (between 0 and 1)
-        progress = (current_epoch - start_epoch) / duration
-        progress = np.clip(progress, 0.0, 1.0)  # Limit to [0, 1]
-
-        if self.training_setup.annealing_type == "sigmoid":
-            # Sigmoid annealing (smooth transition from min_value to end_value)
-            sigmoid_progress = 1 / (1 + np.exp(-10 * (progress - 0.5)))
-            return min_value + (sigmoid_progress * (end_value - min_value))
-
-        elif self.training_setup.annealing_type == "linear":
-            # Linear annealing (uniform increase from min_value to end_value)
-            return min_value + (progress * (end_value - min_value))
-        
-        else:
-            raise ValueError("annealing_type must be 'sigmoid' or 'linear'. ")
-
-        
-
-    def get_kld_weight(self):
-        # Load the validation loss
-        val_loss = self.trainer.callback_metrics.get('val/loss/recon')
-
-        # Check if val_loss is valid (not None)
-        if val_loss is not None:
-            # Convert the tensor to a float (if necessary)
-            if isinstance(val_loss, torch.Tensor):
-                val_loss = val_loss.item()
-
-            # Remove all None values from the history to safely use min()
-            valid_losses = [loss for loss in self.val_loss_hist if loss is not None]
-
-            # If there are valid values in the history, check if val_loss is smaller
-            if valid_losses and min(valid_losses) >= val_loss:
-                self.training_config.kld_weight *= 1.1
-
-            self.training_config.kld_weight = min(self.training_config.kld_weight, self.training_config.vae_end_value)
-            # Store the current loss in the history
-            self.val_loss_hist.append(val_loss)
-
 
     def reparameterize(self, mu, log_var):
         """
@@ -350,57 +287,6 @@ class VAE(pl.LightningModule):
         min_std = std_c.min(dim=0)[0]
         return (max_std / (min_std + 1e-6)).mean()
     
-
-
-
-    def cluster_balance_metric(self, gamma, threshold_factor=0.5):
-        """
-        Evaluates the cluster distribution and penalizes shrinking clusters.
-
-        Args:
-            gamma (Tensor): Soft Assignments (batch_size, num_clusters)
-            threshold_factor (float): Threshold below which clusters are considered shrunk
-            epsilon (float): Numerical stability
-
-        Returns:
-            Tensor: Score (higher is better)
-        """
-        # 1. Compute cluster sizes
-        cluster_sizes = gamma.sum(0)  # Number of assignments per cluster
-        avg_cluster_size = cluster_sizes.mean()  # Average cluster size
-
-        # 2. Shrinkage Penalty: Penalizes clusters < threshold_factor * average
-        shrinkage_penalty = torch.sum(torch.relu((threshold_factor * avg_cluster_size) - cluster_sizes))
-
-        # 3. Balance Penalty: Penalizes imbalanced clusters (standard deviation)
-        balance_penalty = torch.std(cluster_sizes)
-
-        # 4. Combined Score (the smaller, the worse)
-        score = - (balance_penalty + 5.0 * shrinkage_penalty)
-
-        return score  # Higher score = better clustering
-
-    
-    def compute_silhouette(self, z, gamma):
-        """
-        Computes the silhouette score for the given latent variables and soft assignments.
-        Args:
-            z (Tensor): Latent variables (batch_size, latent_dim).
-            gamma (Tensor): Soft assignments (batch_size, num_clusters). 
-        Returns:
-            float: Silhouette score for the clusters.           
-        """
-        cluster_labels = torch.argmax(gamma, dim=1).cpu().numpy()
-
-        # Check number of unique labels
-        unique_labels = len(np.unique(cluster_labels))
-
-        # If less than 2 clusters, return a default value
-        if unique_labels < 2:
-            return torch.tensor(-1.0).to(self.device)  # or another meaningful default value
-
-        return silhouette_score(z.cpu().numpy(), cluster_labels)
-
 
     def compute_loss_components(self, x, x_recon, mu, log_var, z):
         """
