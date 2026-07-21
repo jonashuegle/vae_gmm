@@ -1,14 +1,14 @@
 #ignoring file 
 all_patterns.nc
-README.md
 all_patterns_neu.nc
 cache_pattern_ref/
 cache_df/
 cluster_mapping.json
-environment.yml
 pca_km.pkl
 notebooks/
 slurm/
 logs/
 plots/
 __pycache__/
+.venv/
+*.egg-info/

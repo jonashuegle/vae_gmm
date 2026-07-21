@@ -14,8 +14,8 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.lines import Line2D
 import numpy as np
 
-from src.pattern_reference_manager import PatternReferenceManager
-from src.plotting import Plotting
+from vae_gmm.pattern_reference_manager import PatternReferenceManager
+from vae_gmm.plotting import Plotting
 
 def curved_text(ax, text, radius, center=(0,0), start_angle=-160, end_angle=160, **kwargs):
     # Text wird als Einzelbuchstaben platziert

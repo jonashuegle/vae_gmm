@@ -8,8 +8,8 @@ from typing import Optional, List, Dict
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 
-from src.dataset import CustomDataset
-from src.plotting import Plotting
+from vae_gmm.dataset import CustomDataset
+from vae_gmm.plotting import Plotting
 
 class PatternReferenceManager:
     """

@@ -1,14 +1,7 @@
-# src/VAE_GMM.py
+# vae_gmm/VAE_GMM.py
 from __future__ import annotations
 
 import os
-import sys
-from pathlib import Path
-
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.append(str(ROOT))
 
 import torch
 import torch.nn as nn
@@ -16,7 +9,6 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 
 from torch.optim.lr_scheduler import SequentialLR, ConstantLR, CosineAnnealingLR
-from lightning.pytorch.tuner import Tuner
 
 from matplotlib import pyplot as plt
 import seaborn as sns
@@ -33,8 +25,8 @@ from sklearn.cluster import KMeans
 import argparse
 import numpy as np
 
-from src.dataset import DataModule
-from config import (
+from vae_gmm.dataset import DataModule
+from vae_gmm.config import (
     ModelConfig,
     TrainingConfig,
     TrainingSetup,
@@ -983,17 +975,11 @@ class VAE(pl.LightningModule):
 
 
 
-
-
-
-
-
 if __name__ == "__main__":
     #### Main Script for Training and Testing the VaDE Model ####
     # This script initializes the model, data module, and trainer,
     # and runs either a learning rate finder or a full training session.
     parser = argparse.ArgumentParser(description='Test Script for VaDE.')
-    parser.add_argument('--find_lr', type=bool, default=False, help='Flag to find the optimal learning rate.')
     args = parser.parse_args()
     
     torch.set_float32_matmul_precision('medium')
@@ -1016,28 +1002,14 @@ if __name__ == "__main__":
         default_training_setup,
     )   
 
-    if args.find_lr:
-        trainer = pl.Trainer(
-            accelerator=default_hardware_config.accelerator,
-            devices=default_hardware_config.devices,
-            max_epochs=1,
-            val_check_interval=1,
-            enable_progress_bar=True,
-        )
 
-        tuner = Tuner(trainer)
-        lr_finder = tuner.lr_find(vade, data_module, min_lr=1e-7, max_lr=1e-3, num_training=800)
-        print(lr_finder.suggestion())
+    trainer = pl.Trainer(
+        accelerator= 'cpu',
+        devices= 4,
+        max_epochs=50,
+        val_check_interval=1,
+        enable_progress_bar=True,
+        fast_dev_run=True,
+    )
 
-    else:
-
-        trainer = pl.Trainer(
-            accelerator= 'cpu',
-            devices= 4,
-            max_epochs=50,
-            val_check_interval=1,
-            enable_progress_bar=True,
-            fast_dev_run=True,
-        )
-
-        trainer.fit(vade, data_module)
+    trainer.fit(vade, data_module)

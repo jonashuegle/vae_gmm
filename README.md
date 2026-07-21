@@ -107,7 +107,17 @@ cd vae_gmm
 pip install -e .
 ```
 
-For the optional Ray Tune hyperparameter scan, install `pip install -e ".[scan]"`.
+This installs everything needed to train the model. Two optional extras are available:
+
+| Extra | Command | Needed for |
+|---|---|---|
+| `analysis` | `pip install -e ".[analysis]"` | map plotting — `plotting.py`, `loaders.py`, `pattern_*.py` |
+| `scan` | `pip install -e ".[scan]"` | Ray Tune hyperparameter scan |
+
+The `analysis` extra pulls in [Basemap](https://matplotlib.org/basemap/), which is deprecated
+upstream in favour of [Cartopy](https://scitools.org.uk/cartopy/). It is kept here because the
+plotting code was written against it; porting `plotting.py` to Cartopy is the obvious next step and
+is deliberately out of scope for now. Training and the test suite do not depend on it.
 
 ## Usage
 
@@ -122,14 +132,15 @@ Train:
 
 ```bash
 vae-gmm-train --max_epochs 400 --seed 42        # new run
-vae-gmm-train --resume True --seed 42           # resume the latest version
+vae-gmm-train --resume --seed 42                # resume the latest version
 vae-gmm-train --version 3 --max_epochs 300      # a specific version
+vae-gmm-train --find-lr                         # learning rate finder, no training
 ```
 
 Checkpoints and TensorBoard logs are written to `$LOG_DIR/<experiment>/version_X/`, where
 `<experiment>` comes from `DataConfig.experiment`.
 
-Post-training analysis:
+Post-training analysis (requires the `analysis` extra):
 
 ```python
 import torch

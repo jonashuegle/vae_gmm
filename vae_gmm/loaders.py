@@ -12,10 +12,10 @@ import xarray as xr
 import matplotlib.pyplot as plt
 from scipy.optimize import linear_sum_assignment
 
-from src.dataset import CustomDataset
-from src.VAE_GMM import VAE
-from src.plotting import Plotting
-from src.visualize_tsne import visualize_tsne_matplotlib
+from vae_gmm.dataset import CustomDataset
+from vae_gmm.VAE_GMM import VAE
+from vae_gmm.plotting import Plotting
+from vae_gmm.visualize_tsne import visualize_tsne_matplotlib
 
 
 

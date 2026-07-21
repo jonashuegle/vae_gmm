@@ -15,12 +15,14 @@ from abc import ABC, abstractmethod
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.tuner import Tuner
+
 from torch.utils.tensorboard import SummaryWriter
 from pytorch_lightning.callbacks import ModelCheckpoint, Callback
 
-from src.dataset import DataModule
-from src.VAE_GMM import VAE
-from config import (
+from vae_gmm.dataset import DataModule
+from vae_gmm.VAE_GMM import VAE
+from vae_gmm.config import (
     ModelConfig,
     TrainingConfig,
     TrainingSetup,
@@ -92,15 +94,16 @@ def get_latest_version(base_path):
     else:
         return None
 
-if __name__ == '__main__':
-
+def main(argv=None):
     #### Initialize argument parser ####
     parser = argparse.ArgumentParser(description='Training script for VAE.')
-    parser.add_argument('--resume', type=bool, default=False, help='Flag to resume training from a checkpoint.') # --resume True
     parser.add_argument('--version', type=int, default=None, help='Version of the experiment for logging.') # --version 0
     parser.add_argument('--max_epochs', type=int, default=400, help='Maximum number of epochs for training.') # --max_epochs 100
     parser.add_argument('--seed', type=int, default=None, help='Random seed for reproducibility.')
-    args = parser.parse_args()
+    parser.add_argument('--resume', action='store_true', help='Resume training from the latest checkpoint.')
+    parser.add_argument('--find-lr', action='store_true', help='Run the learning rate finder instead of training.')
+
+    args = parser.parse_args(argv)
 
     # Generate random seed if not provided
     seed = args.seed if args.seed is not None else np.random.randint(0, 2**31)
@@ -122,6 +125,27 @@ if __name__ == '__main__':
     #### Initialize DataModule ####
     # DataModule claass is defined in dataset.py and handles data loading and preprocessing
     data_module = DataModule(data_config.data_dir, batch_size=training_config.batch_size, num_workers=data_config.num_workers)
+
+        #### Learning rate finder ####
+    if args.find_lr:
+        model = VAE(
+            model_config=model_config,
+            training_config=training_config,
+            training_setup=training_setup,
+        )
+        lr_trainer = pl.Trainer(
+            accelerator=hardware_config.accelerator,
+            devices=hardware_config.devices,
+            max_epochs=1,
+            enable_progress_bar=True,
+            logger=False,
+        )
+        lr_finder = Tuner(lr_trainer).lr_find(
+            model, datamodule=data_module, min_lr=1e-7, max_lr=1e-3, num_training=800
+        )
+        print(f"Suggested learning rate: {lr_finder.suggestion()}")
+        return
+
 
     # Path setup for logging and checkpoints
     base_path = f'{data_config.log_dir}/{data_config.experiment}/'
@@ -207,3 +231,7 @@ if __name__ == '__main__':
 
         # Start new training
         trainer.fit(autoencoder, data_module)
+
+
+if __name__ == '__main__':
+    main()

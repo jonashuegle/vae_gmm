@@ -16,7 +16,7 @@ from ray import tune
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.search.optuna import OptunaSearch
 
-from config import (
+from vae_gmm.config import (
     ModelConfig,
     TrainingConfig,
     TrainingSetup,
@@ -24,8 +24,8 @@ from config import (
     DataConfig,
 )
 
-from src.dataset import DataModule
-from src.VAE_GMM import VAE
+from vae_gmm.dataset import DataModule
+from vae_gmm.VAE_GMM import VAE
 
 class SimpleCallback(pl.Callback):
     def on_train_epoch_end(self, trainer, pl_module):
