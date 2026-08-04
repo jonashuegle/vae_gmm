@@ -71,7 +71,7 @@ class CustomDataset(Dataset):
         If the square root transformation is enabled, it applies the square root of the absolute cosine of the latitude.
         If the latitude is greater than or equal to 88.5, it sets the value to 1.
         """
-        self.std_value[self.std_value == 0] = 1.0
+        self.std_value[self.std_value == 0] = 1.0 # Prevent division by zero
         self.data['MSL'] = (self.data['MSL'] - self.mean_value) / self.std_value
         lat = self.data['lat'].values
         if self.sqrt:

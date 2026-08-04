@@ -7,7 +7,7 @@ import xarray as xr
 def make_netcdf(tmp_path):
     """Create a dummy netcdf file for testing."""
 
-    def _make(n_time_steps=5, seed=42):
+    def _make(n_time_steps=5, constant=None, seed=42):
 
         times = xr.date_range("2000-02-15", periods=n_time_steps, freq="6h",
                             calendar="noleap", use_cftime=True)
@@ -17,6 +17,9 @@ def make_netcdf(tmp_path):
 
         rng = np.random.default_rng(seed)
         data = 1013.0 + rng.normal(loc=0.0, scale=10.0, size=(n_time_steps, len(lat), len(lon)))
+
+        if constant is not None:
+            data[:] = constant
 
         ds = xr.Dataset(
             {"MSL": (["time", "lat", "lon"], data)},
