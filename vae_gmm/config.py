@@ -1,16 +1,13 @@
-from dataclasses import dataclass
-from typing import Tuple, Dict, Any, Optional
-import torch.nn as nn
-from pathlib import Path
 import os
-
-
+from dataclasses import dataclass
+from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 
 
 DEFAULT_DATA_DIR = BASE_DIR / "data"
 DEFAULT_LOG_DIR = BASE_DIR / "logs"
+
 
 @dataclass
 class ModelConfig:
@@ -29,9 +26,10 @@ class ModelConfig:
         cluster_init_seed (int): Seed for reproducible initialization.
 
     """
-    input_shape: Tuple[int, ...] = (1, 61, 181)
-    layer_sizes: Tuple[int, ...] = (4000, 2000, 800, 200, 100, 14)
-    dropout_prob: Tuple[float, ...] = (0.4, 0.3, 0.2, 0.1, 0)
+
+    input_shape: tuple[int, ...] = (1, 61, 181)
+    layer_sizes: tuple[int, ...] = (4000, 2000, 800, 200, 100, 14)
+    dropout_prob: tuple[float, ...] = (0.4, 0.3, 0.2, 0.1, 0)
     num_clusters: int = 5
     loss_func_name: str = "MSELoss"
 
@@ -58,6 +56,7 @@ class TrainingConfig:
         log_img (bool): Whether to log images during training.
         log_scaled (bool): Whether to log scaled categorical loss values during training.
     """
+
     batch_size: int = 400
     vae_lr: float = 0.000193066
     clustering_lr: float = 5.929e-06
@@ -71,14 +70,15 @@ class TrainingConfig:
     log_img: bool = True
     log_scaled: bool = True
     dynamic_multiplier: float = 1.0
-    dynamic_reduction_factor: float = 0.9        
-    dynamic_update_epoch: Tuple[int, ...] = (300, 302, 304, 306, 308, 310, 312, 314, 316, 318, 320)
+    dynamic_reduction_factor: float = 0.9
+    dynamic_update_epoch: tuple[int, ...] = (300, 302, 304, 306, 308, 310, 312, 314, 316, 318, 320)
     seed: int = None
+
 
 @dataclass
 class TrainingSetup:
     """Training setup for the VAE and GMM components.
-    
+
     Attributes:
         warmup_epochs (int): Number of warmup epochs.
         vae_epochs (int): Number of epochs for VAE training.
@@ -96,20 +96,22 @@ class TrainingSetup:
         cosine_eta_min (float): Minimum learning rate for cosine annealing.
 
     """
+
     warmup_epochs: int = 25
     vae_epochs: int = 25
     adapt_epochs: int = 15
     gmm_epochs: int = 80
     cat_epochs: int = 250
     reg_epochs: int = 250
-    kmeans_init_epoch : int = 25
-    annealing_type: str = 'linear'
+    kmeans_init_epoch: int = 25
+    annealing_type: str = "linear"
     vae_lr_factor: float = 0.777187766
     vae_lr_patience: int = 30
     clustering_warmup: int = 25
     linear_epochs: int = 25
     cosine_T_max: int = 400
     cosine_eta_min: float = 1.2e-8
+
 
 @dataclass
 class DataConfig:
@@ -122,10 +124,12 @@ class DataConfig:
         experiment (str): Name of the experiment for logging.
         num_workers (int): Number of workers for data loading.
     """
+
     data_dir: str = os.getenv("DATA_PATH", str(DEFAULT_DATA_DIR / "slp.*.nc"))
     log_dir: str = os.getenv("LOG_DIR", str(DEFAULT_LOG_DIR))
     experiment: str = os.getenv("EXPERIMENT_NAME", "Experiment_")
     num_workers: int = int(os.getenv("NUM_WORKERS", "4"))
+
 
 @dataclass
 class HardwareConfig:
@@ -135,8 +139,9 @@ class HardwareConfig:
         accelerator (str): Type of accelerator to use ('gpu', 'cpu', etc.).
         devices (Tuple[int, ...]): Tuple of device IDs to use for training. Set to (0,) for slurm single GPU training.
     """
+
     accelerator: str = "gpu"
-    devices: Tuple[int, ...] = (0,)
+    devices: tuple[int, ...] = (0,)
 
 
 # Example for initializing default configurations
@@ -144,4 +149,3 @@ class HardwareConfig:
 # default_training_config = TrainingConfig()
 # default_data_config = DataConfig()
 # default_hardware_config = HardwareConfig()
-    

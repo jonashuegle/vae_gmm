@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vae-gmm"
+version = "0.2.0"
+requires-python = ">=3.10"
+description = "Weather regime discovery with a VAE and a Gaussian mixture prior"
+dependencies = [
+    "torch>=2.0",
+    "pytorch-lightning>=2.0",
+    "xarray>=2023.1",
+    "netCDF4>=1.6",
+    "cftime>=1.6",
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scipy>=1.10",
+    "scikit-learn>=1.3",
+    "matplotlib>=3.7",
+    "seaborn>=0.12",
+    "plotly>=5.14",
+    "tensorboard>=2.13",
+]
+
+[project.scripts]
+vae-gmm-train = "vae_gmm.training:main"
+
+
+[project.optional-dependencies]
+scan = ["ray[tune]>=2.9"]
+analysis = ["basemap>=1.4"]
+dev = ["pytest>=7.4", "ruff>=0.4"]
+
+
+[tool.setuptools.packages.find]
+include = ["vae_gmm*"]
+
+[tool.ruff]
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501", "E741"]

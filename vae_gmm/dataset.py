@@ -1,12 +1,9 @@
-import torch
-from torch.utils.data import Dataset
-from torch.utils.data import random_split
-import xarray as xr
 import numpy as np
 import pandas as pd
-
 import pytorch_lightning as pl
-from torch.utils.data import DataLoader
+import torch
+import xarray as xr
+from torch.utils.data import DataLoader, Dataset, random_split
 
 
 class CustomDataset(Dataset):
@@ -26,10 +23,11 @@ class CustomDataset(Dataset):
         drop_pol (bool): Whether to drop polar values from the MSL data. Defaults to True.
         sqrt (bool): Whether to apply square root transformation to latitude values. Defaults to False
     """
+
     def __init__(self, nc_file_path, drop_pol=True, sqrt=False, save_ram=True):
         # Load MSL data from NetCDF file (handling of no leap date time format because of the missing 29.02.xxxx)
         self.data = xr.open_dataset(nc_file_path)
-        cftime_times = self.data['time'].values
+        cftime_times = self.data["time"].values
         times_iso = [t.isoformat() for t in cftime_times]
         pd_times = pd.to_datetime(times_iso)
         self.data = self.data.assign_coords(time=pd_times)
@@ -37,24 +35,24 @@ class CustomDataset(Dataset):
 
         # Remove polar values
         if drop_pol:
-            self.data['MSL'] = self.data['MSL'].where(self.data['lat'] < 88.5, 0)
+            self.data["MSL"] = self.data["MSL"].where(self.data["lat"] < 88.5, 0)
 
         # Calculate statistics
-        self.mean_value = self.data['MSL'].mean().values
-        self.std_value = self.data['MSL'].std().values
+        self.mean_value = self.data["MSL"].mean().values
+        self.std_value = self.data["MSL"].std().values
 
         # Normalize the data
         self.normalize_data()
-        if np.isnan(self.data['MSL']).any():
-            print("Warnung: NaNs nach Normalisierung!")
+        if np.isnan(self.data["MSL"]).any():
+            print("Warning: NaNs after normalisation")
 
         # Prepare the dataset for training
-        # Create a list of all spatial data and corresponding times 
+        # Create a list of all spatial data and corresponding times
         # Save data in RAM to avoid bottlenecks during training
         self.all_spatial_data = []
         self.all_times = []
-        for i in range(len(self.data['time'])):
-            arr = self.data['MSL'].isel(time=i).values
+        for i in range(len(self.data["time"])):
+            arr = self.data["MSL"].isel(time=i).values
             arr = torch.FloatTensor(arr).unsqueeze(0)  # shape: [1, ...]
             self.all_spatial_data.append(arr)
             self.all_times.append(str(self.data.time.values[i]))
@@ -71,15 +69,15 @@ class CustomDataset(Dataset):
         If the square root transformation is enabled, it applies the square root of the absolute cosine of the latitude.
         If the latitude is greater than or equal to 88.5, it sets the value to 1.
         """
-        self.std_value[self.std_value == 0] = 1.0
-        self.data['MSL'] = (self.data['MSL'] - self.mean_value) / self.std_value
-        lat = self.data['lat'].values
+        self.std_value[self.std_value == 0] = 1.0  # Prevent division by zero
+        self.data["MSL"] = (self.data["MSL"] - self.mean_value) / self.std_value
+        lat = self.data["lat"].values
         if self.sqrt:
             lat_cos = np.sqrt(np.abs(np.cos(np.deg2rad(lat))))
         else:
             lat_cos = np.abs(np.cos(np.deg2rad(lat)))
         lat_cos = np.where(lat >= 88.5, 1, lat_cos)
-        self.data['MSL'] *= lat_cos[:, None]
+        self.data["MSL"] *= lat_cos[:, None]
 
     def __len__(self):
         """
@@ -98,9 +96,6 @@ class CustomDataset(Dataset):
         return self.all_spatial_data[idx], self.all_times[idx]
 
 
-
-
-
 class DataModule(pl.LightningDataModule):
     """
     Pytorch Lightning DataModule for loading and processing the CustomDataset. It handles the preparation of training, validation, and test datasets, and provides data loaders for each.
@@ -115,8 +110,9 @@ class DataModule(pl.LightningDataModule):
         batch_size (int): Batch size for the data loaders.
         num_workers (int): Number of worker threads for data loading.
     """
+
     def __init__(self, data_dir, batch_size, num_workers):
-        super(DataModule, self).__init__()
+        super().__init__()
         self.data_dir = data_dir
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -146,12 +142,7 @@ class DataModule(pl.LightningDataModule):
         """
         # load the full dataset only once
         if self.full_dataset is None:
-            self.full_dataset = CustomDataset(
-                self.data_dir,
-                drop_pol=True,
-                sqrt=False,
-                save_ram=True
-            )
+            self.full_dataset = CustomDataset(self.data_dir, drop_pol=True, sqrt=False, save_ram=True)
 
         # create train/val split for fitting
         if stage == "fit" or stage is None:
@@ -159,9 +150,7 @@ class DataModule(pl.LightningDataModule):
             val_size = len(self.full_dataset) - train_size
 
             self.train_dataset, self.val_dataset = random_split(
-                self.full_dataset,
-                [train_size, val_size],
-                generator=torch.Generator().manual_seed(42)
+                self.full_dataset, [train_size, val_size], generator=torch.Generator().manual_seed(42)
             )
 
         # make sure we have something for test_dataloader
@@ -178,7 +167,7 @@ class DataModule(pl.LightningDataModule):
             self.train_dataset,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
-            shuffle=self.shuffle_train
+            shuffle=self.shuffle_train,
         )
 
     def val_dataloader(self):
@@ -187,10 +176,7 @@ class DataModule(pl.LightningDataModule):
         This DataLoader does not shuffle the data.
         """
         return DataLoader(
-            self.val_dataset,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            shuffle=False
+            self.val_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False
         )
 
     def test_dataloader(self):
@@ -199,10 +185,7 @@ class DataModule(pl.LightningDataModule):
         This DataLoader does not shuffle the data.
         """
         return DataLoader(
-            self.test_dataset,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            shuffle=False
+            self.test_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False
         )
 
     def all_data_dataloader(self):
@@ -211,8 +194,5 @@ class DataModule(pl.LightningDataModule):
         This DataLoader does not shuffle the data.
         """
         return DataLoader(
-            self.full_dataset,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            shuffle=False
+            self.full_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False
         )
