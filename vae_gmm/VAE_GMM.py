@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import os
 
 import numpy as np
@@ -19,13 +18,10 @@ from sklearn.metrics import (
 )
 
 from vae_gmm.config import (
-    DataConfig,
-    HardwareConfig,
     ModelConfig,
     TrainingConfig,
     TrainingSetup,
 )
-from vae_gmm.dataset import DataModule
 
 
 def lr_lambda(epoch, warmup_epochs=35, linear_epochs=65):
@@ -997,39 +993,3 @@ class VAE(pl.LightningModule):
                 {"scheduler": cluster_scheduler, "interval": "epoch", "name": "cluster_scheduler"},
             ],
         )
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Test Script for VaDE.")
-    args = parser.parse_args()
-
-    torch.set_float32_matmul_precision("medium")
-
-    default_model_config = ModelConfig()
-    default_training_config = TrainingConfig()
-    default_training_setup = TrainingSetup()
-    default_data_config = DataConfig()
-    default_hardware_config = HardwareConfig()
-
-    data_module = DataModule(
-        data_dir=default_data_config.data_dir,
-        batch_size=default_training_config.batch_size,
-        num_workers=default_data_config.num_workers,
-    )
-
-    vade = VAE(
-        default_model_config,
-        default_training_config,
-        default_training_setup,
-    )
-
-    trainer = pl.Trainer(
-        accelerator="cpu",
-        devices=4,
-        max_epochs=50,
-        val_check_interval=1,
-        enable_progress_bar=True,
-        fast_dev_run=True,
-    )
-
-    trainer.fit(vade, data_module)
