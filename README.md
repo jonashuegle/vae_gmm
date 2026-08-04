@@ -154,7 +154,7 @@ CL = ClusteringLoader(
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
 )
 
-CL.auto_map_by_correlation()   # match clusters to reference regimes by spatial correlation
+CL.auto_map_by_correlation()  # match clusters to reference regimes by spatial correlation
 CL.plot_model_composition()
 CL.plot_tsne(use_kmeans=False)
 periods_df = CL.cluster_periods()
@@ -203,8 +203,22 @@ pytest
 
 The test suite deliberately avoids testing a trained model, which would be slow and flaky. It
 covers what can be checked deterministically: annealing schedules against hand-computed values,
-encoder/decoder shape invariants, the reparameterisation trick under a fixed seed, the
-normalisation path on a synthetic NetCDF file, and a single training step on generated data.
+encoder/decoder shape invariants, the normalisation path on a synthetic NetCDF file, and a single
+training step on generated data.
+
+## Known limitations
+
+These were surfaced while building the test suite and are documented rather than patched, since
+they never occur at the training `batch_size` of 400 and fixing them would change model behaviour
+that cannot be re-validated without the original data.
+
+- **Minimum batch size.** Several components assume batches larger than ~30 samples: `BatchNorm1d`
+  needs at least 2, the k-NN latent metrics (`compute_local_density`, `compute_latent_smoothness`)
+  use `k=10`, and the t-SNE logging uses `perplexity=30`. On very small batches these raise instead
+  of degrading gracefully. The smoke test therefore runs on a large enough synthetic batch.
+- **Leap-year episode durations.** `ClusteringLoader.cluster_periods` computes regime durations as
+  wall-clock differences between timestamps. Because the data uses a `noleap` calendar, an episode
+  spanning 28 Feb → 1 Mar of a leap year is counted one day too long.
 
 ## Background
 
