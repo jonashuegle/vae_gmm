@@ -38,3 +38,7 @@ include = ["vae_gmm*"]
 
 [tool.ruff]
 line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501", "E741"]

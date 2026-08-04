@@ -1,6 +1,7 @@
 # testing annealing process for VAE-GMM model
 from vae_gmm.VAE_GMM import lr_lambda
 
+
 def test_lr_lambda_is_zero_during_warmup():
     assert lr_lambda(epoch=1, warmup_epochs=5, linear_epochs=10) == 0.0
 

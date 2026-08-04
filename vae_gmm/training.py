@@ -1,36 +1,24 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-import os
-import glob
-import numpy as np
-import random
 import argparse
-import matplotlib.pyplot as plt
-from sklearn.cluster import KMeans
-from typing import List, Tuple, Dict
-from abc import ABC, abstractmethod
+import glob
+import os
+import random
 
+import numpy as np
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+import torch
+from pytorch_lightning.callbacks import Callback, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.tuner import Tuner
 
-from torch.utils.tensorboard import SummaryWriter
-from pytorch_lightning.callbacks import ModelCheckpoint, Callback
-
-from vae_gmm.dataset import DataModule
-from vae_gmm.VAE_GMM import VAE
 from vae_gmm.config import (
+    DataConfig,
+    HardwareConfig,
     ModelConfig,
     TrainingConfig,
     TrainingSetup,
-    DataConfig,
-    HardwareConfig,
 )
-
-
+from vae_gmm.dataset import DataModule
+from vae_gmm.VAE_GMM import VAE
 
 
 class SwitchShuffleCallback(pl.Callback):
@@ -38,6 +26,7 @@ class SwitchShuffleCallback(pl.Callback):
     Callback to switch the shuffle state of the training dataloader at a specific epoch.
 
     """
+
     def __init__(self, switch_epoch, new_shuffle_value):
         """
         :param switch_epoch: The epoch at which to switch the shuffle state.
@@ -48,7 +37,9 @@ class SwitchShuffleCallback(pl.Callback):
 
     def on_train_epoch_start(self, trainer, pl_module):
         if trainer.current_epoch == self.switch_epoch:
-            print(f"Switching training dataloader shuffle to {self.new_shuffle_value} at epoch {trainer.current_epoch}")
+            print(
+                f"Switching training dataloader shuffle to {self.new_shuffle_value} at epoch {trainer.current_epoch}"
+            )
             # The DataModule reads this flag when building the loader.
             trainer.datamodule.shuffle_train = self.new_shuffle_value
             # Lightning 2.x only
@@ -60,6 +51,7 @@ class SpecificEpochCheckpoint(Callback):
     """
     Saves checkpoints at specific epochs during training.
     """
+
     def __init__(self, save_epochs, dirpath, filename_template="epoch={epoch:02d}-step={global_step}.ckpt"):
         """
         :param save_epochs: List or set of epochs, e.g. [25, 80, 120, 160]
@@ -79,7 +71,6 @@ class SpecificEpochCheckpoint(Callback):
             print(f"Saved specific checkpoint at epoch {epoch} to {ckpt_path}")
 
 
-
 def get_latest_version(base_path):
     """
     Finds the latest version directory in the specified base path.
@@ -88,19 +79,26 @@ def get_latest_version(base_path):
     Returns:
         int: The latest version number found in the base path.
     """
-    versions = sorted(glob.glob(os.path.join(base_path, 'version_*')), key=lambda x: int(x.split('_')[-1]))
+    versions = sorted(glob.glob(os.path.join(base_path, "version_*")), key=lambda x: int(x.split("_")[-1]))
     if versions:
-        return int(versions[-1].split('_')[-1])
+        return int(versions[-1].split("_")[-1])
     else:
         return None
 
+
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='Training script for VAE.')
-    parser.add_argument('--version', type=int, default=None, help='Version of the experiment for logging.') # --version 0
-    parser.add_argument('--max_epochs', type=int, default=400, help='Maximum number of epochs for training.') # --max_epochs 100
-    parser.add_argument('--seed', type=int, default=None, help='Random seed for reproducibility.')
-    parser.add_argument('--resume', action='store_true', help='Resume training from the latest checkpoint.')
-    parser.add_argument('--find-lr', action='store_true', help='Run the learning rate finder instead of training.')
+    parser = argparse.ArgumentParser(description="Training script for VAE.")
+    parser.add_argument(
+        "--version", type=int, default=None, help="Version of the experiment for logging."
+    )  # --version 0
+    parser.add_argument(
+        "--max_epochs", type=int, default=400, help="Maximum number of epochs for training."
+    )  # --max_epochs 100
+    parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility.")
+    parser.add_argument("--resume", action="store_true", help="Resume training from the latest checkpoint.")
+    parser.add_argument(
+        "--find-lr", action="store_true", help="Run the learning rate finder instead of training."
+    )
 
     args = parser.parse_args(argv)
 
@@ -119,10 +117,11 @@ def main(argv=None):
     data_config = DataConfig()
     hardware_config = HardwareConfig()
 
+    data_module = DataModule(
+        data_config.data_dir, batch_size=training_config.batch_size, num_workers=data_config.num_workers
+    )
 
-    data_module = DataModule(data_config.data_dir, batch_size=training_config.batch_size, num_workers=data_config.num_workers)
-
-        # Learning rate finder
+    # Learning rate finder
     if args.find_lr:
         model = VAE(
             model_config=model_config,
@@ -142,9 +141,8 @@ def main(argv=None):
         print(f"Suggested learning rate: {lr_finder.suggestion()}")
         return
 
-
     # Path setup for logging and checkpoints
-    base_path = f'{data_config.log_dir}/{data_config.experiment}/'
+    base_path = f"{data_config.log_dir}/{data_config.experiment}/"
 
     # Version handling
     if args.version is None:
@@ -155,12 +153,14 @@ def main(argv=None):
         else:
             args.version = (latest_version + 1) if latest_version is not None else 0
 
-    logger = TensorBoardLogger(save_dir=f"{data_config.log_dir}/", name=data_config.experiment, version=args.version)
+    logger = TensorBoardLogger(
+        save_dir=f"{data_config.log_dir}/", name=data_config.experiment, version=args.version
+    )
 
-    path = os.path.join(base_path, f'version_{args.version}/checkpoints/')
+    path = os.path.join(base_path, f"version_{args.version}/checkpoints/")
 
     # Get all existing checkpoints in the directory for resuming training
-    log_files = glob.glob(os.path.join(path, '*.ckpt'))
+    log_files = glob.glob(os.path.join(path, "*.ckpt"))
     log_files.sort(key=os.path.getmtime)
 
     # Callbacks
@@ -175,18 +175,20 @@ def main(argv=None):
     specific_checkpoint_callback = SpecificEpochCheckpoint(
         save_epochs=[
             training_setup.kmeans_init_epoch,
-            training_setup.warmup_epochs+training_setup.vae_epochs,
-            training_setup.warmup_epochs+training_setup.vae_epochs+training_setup.adapt_epochs,
-            training_setup.warmup_epochs+training_setup.vae_epochs+training_setup.adapt_epochs+20,
-            training_setup.warmup_epochs+training_setup.vae_epochs+training_setup.adapt_epochs+40,
-            ],
+            training_setup.warmup_epochs + training_setup.vae_epochs,
+            training_setup.warmup_epochs + training_setup.vae_epochs + training_setup.adapt_epochs,
+            training_setup.warmup_epochs + training_setup.vae_epochs + training_setup.adapt_epochs + 20,
+            training_setup.warmup_epochs + training_setup.vae_epochs + training_setup.adapt_epochs + 40,
+        ],
         dirpath=path,
-        filename_template="epoch={epoch:02d}-step={global_step}.ckpt"
+        filename_template="epoch={epoch:02d}-step={global_step}.ckpt",
     )
 
     # Callback to switch the shuffle state of the training dataloader at the kmeans initialization epoch
     # (impact has to be further investigated)
-    switch_callback = SwitchShuffleCallback(switch_epoch=training_setup.kmeans_init_epoch, new_shuffle_value=False)
+    switch_callback = SwitchShuffleCallback(
+        switch_epoch=training_setup.kmeans_init_epoch, new_shuffle_value=False
+    )
 
     # Trainer
     trainer = pl.Trainer(
@@ -196,7 +198,7 @@ def main(argv=None):
         enable_progress_bar=True,
         check_val_every_n_epoch=1,
         callbacks=[last_checkpoint_callback, specific_checkpoint_callback, switch_callback],
-        #callbacks=[EarlyStopping(monitor="val/loss/recon", patience=50, min_delta=0.00, mode='min')],
+        # callbacks=[EarlyStopping(monitor="val/loss/recon", patience=50, min_delta=0.00, mode='min')],
         logger=logger,
         precision=32,
     )
@@ -216,14 +218,14 @@ def main(argv=None):
         print("No checkpoint found. Starting new training.")
         # Initialize new model
         autoencoder = VAE(
-            model_config = model_config,
-            training_config = training_config,
-            training_setup = training_setup,
+            model_config=model_config,
+            training_config=training_config,
+            training_setup=training_setup,
         )
 
         # Start new training
         trainer.fit(autoencoder, data_module)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

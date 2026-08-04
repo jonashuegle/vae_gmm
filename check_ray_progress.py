@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
-import os
-import json
 import argparse
+import json
+import os
 from datetime import datetime
+
 
 def check_ray_progress(experiment_dir):
     """Reports the progress of a Ray Tune experiment."""
@@ -31,7 +32,7 @@ def check_ray_progress(experiment_dir):
     running = 0
     error = 0
 
-    best_silhouette = -float('inf')
+    best_silhouette = -float("inf")
     best_trial_id = None
 
     for trial_dir in trial_dirs:
@@ -42,7 +43,7 @@ def check_ray_progress(experiment_dir):
 
         if os.path.exists(result_file):
             try:
-                with open(result_file, 'r') as f:
+                with open(result_file) as f:
                     result = json.load(f)
 
                 completed += 1
@@ -74,11 +75,12 @@ def check_ray_progress(experiment_dir):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Check the progress of a Ray Tune run.')
+    parser = argparse.ArgumentParser(description="Check the progress of a Ray Tune run.")
     parser.add_argument(
-        '--dir', type=str,
+        "--dir",
+        type=str,
         default=os.getenv("RAY_LOG_DIR", "./logs_ray"),
-        help='Experiment directory',
+        help="Experiment directory",
     )
 
     args = parser.parse_args()

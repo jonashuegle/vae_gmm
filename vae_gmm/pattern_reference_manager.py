@@ -1,15 +1,15 @@
-import os
 import json
+import os
+from pathlib import Path
+
 import numpy as np
 import xarray as xr
-from pathlib import Path
-from typing import Optional, List, Dict
-
-from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
 
 from vae_gmm.dataset import CustomDataset
 from vae_gmm.plotting import Plotting
+
 
 class PatternReferenceManager:
     """
@@ -44,9 +44,9 @@ class PatternReferenceManager:
         self.f_pattern = self.cache_dir / f"{self.stem}_pattern.nc"
         self.f_mapping = self.cache_dir / f"{self.stem}_manual_mapping.json"
 
-        self.patterns: Optional[xr.DataArray] = None
-        self.labels: Optional[np.ndarray] = None
-        self.mapping: Optional[Dict[int, str]] = None
+        self.patterns: xr.DataArray | None = None
+        self.labels: np.ndarray | None = None
+        self.mapping: dict[int, str] | None = None
 
         self._load_or_compute_patterns()
         if self.f_mapping.exists():
@@ -55,7 +55,6 @@ class PatternReferenceManager:
             # Without a mapping the clusters are plotted unnamed.
             print("[PatternReferenceManager] Kein Mapping gefunden - Cluster werden mit Nummern geplottet.")
             self.plot_clusters()
-
 
     def _load_or_compute_patterns(self):
         """Load patterns and labels from the cache, or recompute them."""
@@ -117,24 +116,30 @@ class PatternReferenceManager:
                 os.remove(f)
         print("PatternReferenceManager: Cache gelöscht.")
 
-    def plot_clusters(self, plotter: Optional[Plotting] = None, titles: Optional[List[str]] = None, show_colorbar=True):
+    def plot_clusters(
+        self, plotter: Plotting | None = None, titles: list[str] | None = None, show_colorbar=True
+    ):
         """
         Plot the cluster composites.
         """
         if self.patterns is None:
             raise ValueError("Keine Patterns gefunden!")
         if plotter is None:
-            lon = self.patterns['lon'].values
-            lat = self.patterns['lat'].values
+            lon = self.patterns["lon"].values
+            lat = self.patterns["lat"].values
             plotter = Plotting(lon=lon, lat=lat)
         if titles is None:
             if self.mapping is not None:
+
                 def _to_int_if_possible(val):
                     try:
                         return int(val)
                     except Exception:
                         return val
-                titles = [self.mapping.get(_to_int_if_possible(i), str(i)) for i in self.patterns.cluster.values]
+
+                titles = [
+                    self.mapping.get(_to_int_if_possible(i), str(i)) for i in self.patterns.cluster.values
+                ]
             else:
                 titles = [str(i) for i in self.patterns.cluster.values]
 
@@ -148,11 +153,11 @@ class PatternReferenceManager:
 
     def load_mapping(self):
         """Load a mapping from the JSON cache."""
-        with open(self.f_mapping, "r") as f:
+        with open(self.f_mapping) as f:
             raw = json.load(f)
         self.mapping = {int(k): v for k, v in raw.items()}
 
-    def apply_mapping(self, mapping: Optional[dict] = None):
+    def apply_mapping(self, mapping: dict | None = None):
         """
         Apply a mapping to the cluster names in the DataArray.
         mapping: dict[int, str], e.g. {0: "NAO-", ...}
@@ -163,16 +168,17 @@ class PatternReferenceManager:
             raise ValueError("Keine Patterns zum Umbenennen!")
         if self.mapping is None:
             raise ValueError("Kein Mapping gefunden!")
+
         def _to_int_if_possible(val):
             try:
                 return int(val)
             except (ValueError, TypeError):
                 return val
+
         new_names = [self.mapping.get(_to_int_if_possible(i), str(i)) for i in self.patterns.cluster.values]
         self.patterns = self.patterns.assign_coords(cluster=("cluster", new_names))
         # Persist the renamed patterns.
         self.save_patterns()
-
 
     def get_cluster_labels(self):
         """Return the cluster labels for all time steps."""
@@ -187,15 +193,10 @@ class PatternReferenceManager:
         return self.mapping
 
 
-
 if __name__ == "__main__":
-
     mgr = PatternReferenceManager(
-                            os.getenv("REFERENCE_NC", "./data/slp_reference.nc"),
-                             var_name="MSL",
-                             n_pcs=14,
-                             n_clusters=5
-                            )
+        os.getenv("REFERENCE_NC", "./data/slp_reference.nc"), var_name="MSL", n_pcs=14, n_clusters=5
+    )
 
     mapping = {0: "SCAN", 1: "ATL-", 2: "NAO+", 3: "NAO-", 4: "DIPOL"}
     mgr.apply_mapping(mapping)
